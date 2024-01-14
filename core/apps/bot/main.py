@@ -1,5 +1,7 @@
 import asyncio
 import logging
+from urllib.parse import urlparse
+
 import requests
 import re
 
@@ -12,34 +14,41 @@ import vk_api
 from channels.db import database_sync_to_async
 
 from django.conf import settings
+from vk_api import ApiError
+
 from core.apps.bot.kb import KeyboardCreator
-from core.apps.bot.models import User
+from core.apps.bot.models import BotUser, VKUser
 
 bot = AsyncTeleBot(settings.TOKEN_BOT, parse_mode='HTML')
-vk_token = settings.VK_ACCESS_TOKEN
 telebot.logger.setLevel(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
 keyboard_creator = KeyboardCreator()
 
-mute_users = set()
-user_states = {}
-users_vk = []
+vk_session = vk_api.VkApi(token=settings.VK_ACCESS_TOKEN)
+vk = vk_session.get_api()
 
-links = [
-    "https://vk.com/it_joke?w=wall-46453123_358613",
-    "https://vk.com/it_joke?w=wall-46453123_362979",
-    "https://vk.com/rhymes?w=wall-28905875_33066235"
-]
+mute_users = set()
+users_vk = []
 
 
 @database_sync_to_async
-def create_user(user_id, first_name, last_name, username):
-    return User.objects.create(
+def create_tg_user(user_id, first_name, last_name, username):
+    return BotUser.objects.create(
         tg_id=user_id,
         first_name=first_name,
         last_name=last_name,
-        username=username
+        username=username,
     )
+
+
+@database_sync_to_async
+def create_vk_user(vk_id, vk_page_url):
+    if vk_id:
+        return VKUser.objects.create(
+            vk_id=vk_id,
+            vk_page_url=vk_page_url,
+        )
+    return None
 
 
 @bot.message_handler(commands=['start'])
@@ -47,32 +56,67 @@ async def send_welcome(message):
     user_id = message.from_user.id
     first_name = message.from_user.first_name
     last_name = message.from_user.last_name
-    username = message.from_user.full_name
+    username = message.from_user.username
 
     await asyncio.sleep(1)
-
-    await create_user(user_id, first_name, last_name, username)
-
-    user_keyboard = keyboard_creator.create_admin_keyboard()
-    await bot.reply_to(message, "Для продолжения нажмите на кнопку 'Указать VK ID'", reply_markup=user_keyboard)
-    await bot.send_message(message.chat.id, message.chat.id)
-
-
-@bot.message_handler(func=lambda message: message.text == "Указать VK ID")
-async def get_user_id(message):
-    markup = types.ForceReply(selective=False)
-    await bot.send_message(message.chat.id, "Введите ваш VK ID:", reply_markup=markup)
-    user_states[message.chat.id] = "waiting_for_vk_id"
+    try:
+        await database_sync_to_async(BotUser.objects.get)(tg_id=user_id)
+    except BotUser.DoesNotExist:
+        await create_tg_user(user_id, first_name, last_name, username)
+    await bot.reply_to(message, "Для регистрации отправьте ссылку на страницу ВК")
 
 
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == "waiting_for_vk_id")
+@bot.message_handler(func=lambda message: message.chat.type in ['private'])
 async def process_vk_id(message):
-    user_vk_id = message.text
-    print("Received VK ID:", user_vk_id)
-    user_states[message.chat.id] = None
-    await bot.send_message(message.chat.id, "Спасибо за предоставленный VK ID!")
-    users_vk.append(user_vk_id)
+    a = message.chat.type
+    try:
+        user_tg = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
+    except BotUser.DoesNotExist:
+        await bot.send_message(message.chat.id, "Пользователь не найден. Введите /start для начала.")
+        return
 
+    if not message.entities or message.entities[0].type != 'url':
+        await bot.send_message(message.chat.id, "Пожалуйста, введите корректный URL.")
+        return
+
+    vk_page_url = message.text
+    vk_id = None
+    if 'vk.com/' in vk_page_url:
+        vk_id = vk_page_url.split('/')[-1]
+
+    if not vk_id.replace('id', '').isdigit():
+        try:
+            vk_user_info = vk.utils.resolveScreenName(screen_name=vk_id)
+            vk_id = vk_user_info['object_id']
+        except ApiError as e:
+            await bot.send_message(message.chat.id, f"Ошибка при получении id пользователя: {e}")
+            return
+    else:
+        vk_id = vk_id.replace('id', '')
+    vk_id = int(vk_id)
+    kb = keyboard_creator.create_admin_keyboard() if user_tg.is_admin else keyboard_creator.create_user_keyboard()
+
+    try:
+        await database_sync_to_async(VKUser.objects.get)(vk_id=vk_id)
+        await bot.send_message(message.chat.id, f"Пользователь уже существует", reply_markup=kb)
+    except VKUser.DoesNotExist:
+        vk_user = await create_vk_user(vk_id, vk_page_url)
+        if vk_user:
+            user_tg.vk_user = vk_user
+            await database_sync_to_async(user_tg.save)()
+        await bot.send_message(message.chat.id, "Спасибо за предоставленный VK ID!", reply_markup=kb)
+
+
+@bot.message_handler(func=lambda message: message.chat.type in ['group', 'supergroup'])
+async def chat_member_handler(message: types.Message):
+    try:
+        chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
+        if chat_user:
+            await bot.send_message(message.chat.id, f"Привет")
+    except BotUser.DoesNotExist:
+        await bot.send_message(message.chat.id, "Не зарегистрирвоанный пользователь")
+
+# Доделать
 
 @bot.message_handler(func=lambda message: True)
 async def handle_message(message):
@@ -114,9 +158,6 @@ async def check_task(callback: types.CallbackQuery):
                     post_id = post_id_match.group(1)
                     print("Extracted post_id:", post_id)
 
-                    vk_session = vk_api.VkApi(token=settings.VK_ACCESS_TOKEN)
-
-                    vk = vk_session.get_api()
 
                     likes = vk.likes.getList(
                         type='post',
@@ -154,43 +195,43 @@ async def check_task(callback: types.CallbackQuery):
 
 
 
-# @bot.message_handler(func=lambda message: True)
-# async def echo_message(message):
-#     user_id = message.from_user.id
-#     task_text = "Здесь ваше задание..."
-#     await bot.send_message(user_id, task_text)
-#     await bot.send_message(user_id, message.text)
+@bot.message_handler(func=lambda message: True)
+async def echo_message(message):
+    user_id = message.from_user.id
+    task_text = "Здесь ваше задание..."
+    await bot.send_message(user_id, task_text)
+    await bot.send_message(user_id, message.text)
 
 
 
-# # Создайте экземпляр VK API
-# vk_session = vk_api.VkApi(token=settings.VK_ACCESS_TOKEN)
-#
-# # Получите API
-# vk = vk_session.get_api()
-#
-# # Укажите ID пользователя (в данном случае, для группы it_joke)
-# owner_id = -46453123  # ID группы it_joke
-#
-# # Получите информацию о стене группы (первый пост)
-# wall_info = vk.wall.get(owner_id=owner_id, count=1)
-#
-# # Проверка, что есть посты
-# if wall_info['items']:
-#     # Получите ID первого поста
-#     post_id = wall_info['items'][0]['id']
-#
-#     # Получите список пользователей, поставивших лайк
-#     likes = vk.likes.getList(
-#         type='post',
-#         owner_id=owner_id,
-#         item_id=post_id,
-#         filter='likes',
-#         extended=1
-#     )
-#
-#     # Выведите список пользователей, поставивших лайк
-#     for user in likes['items']:
-#         print(user['first_name'], user['last_name'], user['id'])
-# else:
-#     print("На стене нет постов.")
+# Создайте экземпляр VK API
+vk_session = vk_api.VkApi(token=settings.VK_ACCESS_TOKEN)
+
+# Получите API
+vk = vk_session.get_api()
+
+# Укажите ID пользователя (в данном случае, для группы it_joke)
+owner_id = -46453123  # ID группы it_joke
+
+# Получите информацию о стене группы (первый пост)
+wall_info = vk.wall.get(owner_id=owner_id, count=1)
+
+# Проверка, что есть посты
+if wall_info['items']:
+    # Получите ID первого поста
+    post_id = wall_info['items'][0]['id']
+
+    # Получите список пользователей, поставивших лайк
+    likes = vk.likes.getList(
+        type='post',
+        owner_id=owner_id,
+        item_id=post_id,
+        filter='likes',
+        extended=1
+    )
+
+    # Выведите список пользователей, поставивших лайк
+    for user in likes['items']:
+        print(user['first_name'], user['last_name'], user['id'])
+else:
+    print("На стене нет постов.")

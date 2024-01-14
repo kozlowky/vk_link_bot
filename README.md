@@ -1,3 +1,8 @@
+# Стэк:
+Django>=4.2.2\
+PostgreSQL\
+pyTelegramBotAPI
+
 # Настройки перед запуском
 ## Отредактируйте «.env_prod».
 ### Django settings
