@@ -104,36 +104,30 @@ async def process_vk_id(message):
         if vk_user:
             user_tg.vk_user = vk_user
             await database_sync_to_async(user_tg.save)()
-        await bot.send_message(message.chat.id, "Спасибо за предоставленный VK ID!", reply_markup=kb)
+        await bot.send_message(message.chat.id, "Регистрация прошла успешно!", reply_markup=kb)
 
 
 @bot.message_handler(func=lambda message: message.chat.type in ['group', 'supergroup'])
 async def chat_member_handler(message: types.Message):
+    user_id = message.from_user.id
     try:
         chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
         if chat_user:
-            await bot.send_message(message.chat.id, f"Привет")
+            if message.entities and message.entities[0].type == 'url':
+                if 'w=wall' in message.text:
+                    check_kb = keyboard_creator.create_check_keyboard()
+                    user_chat_id = message.from_user.id
+                    await bot.send_message(user_chat_id,
+                                           f"Ваше задание:\n {message.text}",
+                                           disable_web_page_preview=True,
+                                           reply_markup=check_kb)
     except BotUser.DoesNotExist:
-        await bot.send_message(message.chat.id, "Не зарегистрирвоанный пользователь")
-
-# Доделать
-
-@bot.message_handler(func=lambda message: True)
-async def handle_message(message):
-    check_kb = keyboard_creator.create_check_keyboard()
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-
-    if message.entities and message.entities[0].type == 'url':
-        if 'w=wall' in message.text:
-            message_text = "Здесь ваше задание:\n" + "\n".join(links)
-            # mute_users.add(user_id)
-            # await bot.restrict_chat_member(chat_id, user_id, can_send_messages=False)
-            await bot.send_message(user_id, message_text, disable_web_page_preview=True, reply_markup=check_kb)
-        else:
-            await bot.reply_to(message, 'Некорректная ссылка')
-    else:
-        await bot.reply_to(message, 'Сообщение не содержит ссылки.')
+        await bot.restrict_chat_member(
+            chat_id=message.chat.id,
+            user_id=user_id,
+            until_date=0,
+            can_send_messages=False
+        )
 
 
 @bot.callback_query_handler(func=lambda callback: callback.data == 'check_button')
@@ -153,11 +147,8 @@ async def check_task(callback: types.CallbackQuery):
                 match_post = re.search(r'wall-(\d+)_', post_link)
                 if match_post:
                     owner_id = "-" + match_post.group(1)
-                    print("Extracted owner_id:", owner_id)
                     post_id_match = re.search(r'wall-\d+_(\d+)', post_link)
                     post_id = post_id_match.group(1)
-                    print("Extracted post_id:", post_id)
-
 
                     likes = vk.likes.getList(
                         type='post',
@@ -167,15 +158,13 @@ async def check_task(callback: types.CallbackQuery):
                         extended=1
                     )
 
-                    user_id = int(users_vk[0])
-                    print(users_vk)
                     user_likes = [user['id'] for user in likes['items']]
-                    print(user_likes)
-                    if user_id in user_likes:
-                        print(f"User {callback.from_user.first_name} {callback.from_user.last_name} ({user_id}) поставил лайк.")
+                    user_id = await database_sync_to_async(BotUser.objects.get)(tg_id=callback.from_user.id)
+                    vk_user = await database_sync_to_async(lambda: user_id.vk_user)()
+                    vk_id = vk_user.vk_id
+                    if vk_id in user_likes:
                         links.remove(post_link)
                     else:
-                        print(f"User {callback.from_user.first_name} {callback.from_user.last_name} ({user_id}) не поставил лайк.")
                         posts_without_like.append(post_link)
 
                 else:
@@ -183,55 +172,10 @@ async def check_task(callback: types.CallbackQuery):
 
             if posts_without_like:
                 message = "Вы не поставили лайк в следующих постах:\n" + "\n".join(posts_without_like)
-                await bot.send_message(callback.message.chat.id, message)
+                await bot.send_message(callback.message.chat.id, message, disable_web_page_preview=True)
             else:
-                await bot.send_message(callback.message.chat.id, 'Вы поставили лайк во всех указанных постах. ОК')
-
+                await bot.send_message(callback.message.chat.id,
+                                       'Задание принято!',
+                                       disable_web_page_preview=True)
         else:
             print("Ссылок не найдено.")
-
-        await bot.send_message(callback.message.chat.id, 'Ok')
-
-
-
-
-@bot.message_handler(func=lambda message: True)
-async def echo_message(message):
-    user_id = message.from_user.id
-    task_text = "Здесь ваше задание..."
-    await bot.send_message(user_id, task_text)
-    await bot.send_message(user_id, message.text)
-
-
-
-# Создайте экземпляр VK API
-vk_session = vk_api.VkApi(token=settings.VK_ACCESS_TOKEN)
-
-# Получите API
-vk = vk_session.get_api()
-
-# Укажите ID пользователя (в данном случае, для группы it_joke)
-owner_id = -46453123  # ID группы it_joke
-
-# Получите информацию о стене группы (первый пост)
-wall_info = vk.wall.get(owner_id=owner_id, count=1)
-
-# Проверка, что есть посты
-if wall_info['items']:
-    # Получите ID первого поста
-    post_id = wall_info['items'][0]['id']
-
-    # Получите список пользователей, поставивших лайк
-    likes = vk.likes.getList(
-        type='post',
-        owner_id=owner_id,
-        item_id=post_id,
-        filter='likes',
-        extended=1
-    )
-
-    # Выведите список пользователей, поставивших лайк
-    for user in likes['items']:
-        print(user['first_name'], user['last_name'], user['id'])
-else:
-    print("На стене нет постов.")
