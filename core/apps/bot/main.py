@@ -31,6 +31,13 @@ mute_users = set()
 users_vk = []
 
 
+test_links = [
+    'https://vk.com/it_joke?w=wall-46453123_363333',
+    'https://vk.com/it_joke?w=wall-46453123_363284',
+    'https://vk.com/it_joke?w=wall-46453123_363267',
+    'https://vk.com/it_joke?w=wall-46453123_363249'
+]
+
 @database_sync_to_async
 def create_tg_user(user_id, first_name, last_name, username):
     return BotUser.objects.create(
@@ -114,11 +121,11 @@ async def chat_member_handler(message: types.Message):
         chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
         if chat_user:
             if message.entities and message.entities[0].type == 'url':
-                if 'w=wall' in message.text:
+                if 'wall' in message.text:
                     check_kb = keyboard_creator.create_check_keyboard()
                     user_chat_id = message.from_user.id
                     await bot.send_message(user_chat_id,
-                                           f"Ваше задание:\n {message.text}",
+                                           f"Ваше задание:\n {test_links}",
                                            disable_web_page_preview=True,
                                            reply_markup=check_kb)
     except BotUser.DoesNotExist:
@@ -141,8 +148,8 @@ async def check_task(callback: types.CallbackQuery):
         if links:
             posts_without_like = []
 
-            for post_link in links:
-                print("Extracted post link:", post_link)
+            for post_link in test_links:
+                print("Checking post link:", post_link)
 
                 match_post = re.search(r'wall-(\d+)_', post_link)
                 if match_post:
@@ -162,20 +169,23 @@ async def check_task(callback: types.CallbackQuery):
                     user_id = await database_sync_to_async(BotUser.objects.get)(tg_id=callback.from_user.id)
                     vk_user = await database_sync_to_async(lambda: user_id.vk_user)()
                     vk_id = vk_user.vk_id
-                    if vk_id in user_likes:
-                        links.remove(post_link)
-                    else:
+                    if vk_id not in user_likes:
                         posts_without_like.append(post_link)
 
                 else:
                     print("Ошибка при извлечении ID поста.")
 
             if posts_without_like:
+                print(posts_without_like)
                 message = "Вы не поставили лайк в следующих постах:\n" + "\n".join(posts_without_like)
-                await bot.send_message(callback.message.chat.id, message, disable_web_page_preview=True)
             else:
-                await bot.send_message(callback.message.chat.id,
-                                       'Задание принято!',
-                                       disable_web_page_preview=True)
+                message = 'Задание принято!'
+
+            check_kb = keyboard_creator.create_check_keyboard()
+            await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                        message_id=callback.message.message_id,
+                                        text=message,
+                                        disable_web_page_preview=True,
+                                        reply_markup=check_kb)
         else:
             print("Ссылок не найдено.")
