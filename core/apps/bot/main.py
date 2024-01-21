@@ -75,7 +75,6 @@ async def send_welcome(message):
 
 @bot.message_handler(func=lambda message: message.chat.type in ['private'])
 async def process_vk_id(message):
-    a = message.chat.type
     try:
         user_tg = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
     except BotUser.DoesNotExist:
