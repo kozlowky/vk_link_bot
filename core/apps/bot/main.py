@@ -14,6 +14,7 @@ import vk_api
 from channels.db import database_sync_to_async
 
 from django.conf import settings
+from telebot.types import CallbackQuery
 from vk_api import ApiError
 
 from core.apps.bot.kb import KeyboardCreator
@@ -30,13 +31,15 @@ vk = vk_session.get_api()
 mute_users = set()
 users_vk = []
 
-
 test_links = [
     'https://vk.com/it_joke?w=wall-46453123_363333',
     'https://vk.com/it_joke?w=wall-46453123_363284',
     'https://vk.com/it_joke?w=wall-46453123_363267',
     'https://vk.com/it_joke?w=wall-46453123_363249'
 ]
+
+chat_1 = 'https://t.me/test_220124'
+chat_1_id = []
 
 @database_sync_to_async
 def create_tg_user(user_id, first_name, last_name, username):
@@ -116,29 +119,52 @@ async def process_vk_id(message):
 @bot.message_handler(func=lambda message: message.chat.type in ['group', 'supergroup'])
 async def chat_member_handler(message: types.Message):
     user_id = message.from_user.id
-    try:
-        chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
-        if chat_user:
-            if message.entities and message.entities[0].type == 'url':
-                if 'wall' in message.text:
-                    check_kb = keyboard_creator.create_check_keyboard()
-                    user_chat_id = message.from_user.id
-                    await bot.send_message(user_chat_id,
-                                           f"Ваше задание:\n {test_links}",
-                                           disable_web_page_preview=True,
-                                           reply_markup=check_kb)
-    except BotUser.DoesNotExist:
-        await bot.restrict_chat_member(
-            chat_id=message.chat.id,
-            user_id=user_id,
-            until_date=0,
-            can_send_messages=False
-        )
+    chat_chat = chat_1.split('/')[-1]  # Настроить в settings
+    message_chat = message.chat.username
+
+    if chat_chat == message_chat:
+        try:
+            chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
+            if chat_user:
+                if message.entities and message.entities[0].type == 'url':
+                    if 'wall' in message.text:
+                        check_kb = keyboard_creator.create_check_keyboard()
+                        user_chat_id = message.from_user.id
+                        await bot.send_message(user_chat_id,
+                                               f"Ваше задание:\n {test_links}",
+                                               disable_web_page_preview=True,
+                                               reply_markup=check_kb)
+                        await mute_user(message)
+
+        except BotUser.DoesNotExist:
+            await bot.restrict_chat_member(
+                chat_id=message.chat.id,
+                user_id=user_id,
+                until_date=0,
+                can_send_messages=False
+            )
+    else:
+        pass
+
+
+async def mute_user(message):
+    chat_id = message.chat.id
+    chat_1_id.append(chat_id)
+    user_id = message.from_user.id
+    user_get = await bot.get_chat_member(chat_id, user_id)
+    user_status = user_get.status if user_get else None
+
+    if user_status == 'administrator' or user_status == 'creator':
+        pass
+    else:
+        await bot.restrict_chat_member(chat_id, user_id, until_date=0)
 
 
 @bot.callback_query_handler(func=lambda callback: callback.data == 'check_button')
 async def check_task(callback: types.CallbackQuery):
     if callback.data == 'check_button':
+        user_id = await database_sync_to_async(BotUser.objects.get)(tg_id=callback.from_user.id)
+        vk_user = await database_sync_to_async(lambda: user_id.vk_user)()
         print(callback.message.text)
 
         links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.message.text)
@@ -165,8 +191,6 @@ async def check_task(callback: types.CallbackQuery):
                     )
 
                     user_likes = [user['id'] for user in likes['items']]
-                    user_id = await database_sync_to_async(BotUser.objects.get)(tg_id=callback.from_user.id)
-                    vk_user = await database_sync_to_async(lambda: user_id.vk_user)()
                     vk_id = vk_user.vk_id
                     if vk_id not in user_likes:
                         posts_without_like.append(post_link)
@@ -177,14 +201,28 @@ async def check_task(callback: types.CallbackQuery):
             if posts_without_like:
                 print(posts_without_like)
                 message = "Вы не поставили лайк в следующих постах:\n" + "\n".join(posts_without_like)
+
+                check_kb = keyboard_creator.create_check_keyboard()
+                await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                            message_id=callback.message.message_id,
+                                            text=message,
+                                            disable_web_page_preview=True,
+                                            reply_markup=check_kb)
             else:
                 message = 'Задание принято!'
-
-            check_kb = keyboard_creator.create_check_keyboard()
-            await bot.edit_message_text(chat_id=callback.message.chat.id,
-                                        message_id=callback.message.message_id,
-                                        text=message,
-                                        disable_web_page_preview=True,
-                                        reply_markup=check_kb)
+                await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                            message_id=callback.message.message_id,
+                                            text=message,
+                                            disable_web_page_preview=True
+                                            )
+                await unmute_user(callback, user_id)
         else:
             print("Ссылок не найдено.")
+
+
+async def unmute_user(callback, user_id):
+    if callback.message:
+        chat_id = chat_1_id[0]
+        await bot.restrict_chat_member(chat_id, user_id.tg_id, can_send_messages=True, can_send_media_messages=True,
+                                       can_send_other_messages=True, can_add_web_page_previews=True)
+
