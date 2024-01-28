@@ -37,7 +37,6 @@ VK_ACCESS_TOKEN = env.str('VK_ACCESS_TOKEN')
 # Application definition
 
 INSTALLED_APPS = [
-    'grappelli',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
