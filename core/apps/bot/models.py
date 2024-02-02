@@ -4,6 +4,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.apps.bot.constants.users_type import UserTypes, USER_TYPES_CHOICES
 from core.apps.bot.constants.bot_label import BotLabel, BOT_LABEL_CHOICES
+from core.apps.bot.constants.state_type import StateTypes, USER_STATES_CHOICES
 
 
 class BotUser(models.Model):
@@ -20,7 +21,10 @@ class BotUser(models.Model):
     )
     vk_id = models.BigIntegerField(_('ВК ID'), unique=True, blank=True, null=True)
     vk_user_url = models.URLField(_('Ссылка на ВК Профиль'), max_length=150, unique=True, blank=True, null=True)
-    is_admin = models.BooleanField(_('Являеться администратором?'), default=False)
+    is_admin = models.BooleanField(_('Является администратором?'), default=False)
+    state_menu = models.IntegerField(_('Состояние'), default=StateTypes.DEFAULT.value, choices=USER_STATES_CHOICES)
+    vip_code = models.ForeignKey("VIPCode", related_name='bot_users', verbose_name=_('VIP Код'), null=True,
+                                 blank=True, on_delete=models.SET_NULL)
 
     def __str__(self):
         return self.username or f"{self.first_name} {self.last_name}"
@@ -32,18 +36,9 @@ class VIPCode(models.Model):
         verbose_name_plural = 'VIP Коды'
 
     vip_code = models.CharField(_('VIP Код'), max_length=100, unique=True)
-    bot_user = models.OneToOneField(BotUser, related_name='vip_code', verbose_name=_('Пользователь'), null=True,
-                                    blank=True, on_delete=models.SET_NULL)
-    added_at = models.DateTimeField(_('Действителен от'), auto_now_add=True)
 
     def __str__(self):
         return self.vip_code
-
-    def expiration_datetime(self):
-        expiration_date = self.added_at + timedelta(days=30)
-        return expiration_date
-
-    expiration_datetime.short_description = 'Дата окончания ВИП Кода'
 
 
 class LinkStorage(models.Model):
@@ -89,6 +84,7 @@ class UserDoneLinks(models.Model):
 class BotSettings(models.Model):
     class Meta:
         verbose_name_plural = 'Настройки Бота'
+
     chat_label = models.IntegerField(
         _('Тип Чата'), default=BotLabel.DEFAULT.value, choices=BOT_LABEL_CHOICES
     )
@@ -97,4 +93,3 @@ class BotSettings(models.Model):
 
     def __str__(self):
         return self.bot_chats
-
