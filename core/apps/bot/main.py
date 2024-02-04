@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 
 import telebot
 from telebot import types
@@ -13,6 +14,7 @@ from django.conf import settings
 from vk_api import ApiError
 
 from core.apps.bot.constants import message_text
+from core.apps.bot.constants import chat_types
 from core.apps.bot.constants.state_type import StateTypes
 from core.apps.bot.constants.users_type import UserTypes
 from core.apps.bot.kb import KeyboardCreator, user_kb_list, admin_kb_list, start_menu_kb
@@ -34,7 +36,7 @@ user_handler = UserHandler(bot)
 db_manager = DatabaseManager()
 
 
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=['start'], func=lambda message: message.chat.type == chat_types.PRIVATE_CHAT_TYPE)
 async def send_welcome(message):
     user_id = message.from_user.id
     try:
@@ -57,7 +59,8 @@ async def send_welcome(message):
         await bot.reply_to(message, text=message_text.start_message, reply_markup=kb)
 
 
-@bot.message_handler(func=lambda message: message.text in start_menu_kb)
+@bot.message_handler(
+    func=lambda message: message.text in start_menu_kb and message.chat.type == chat_types.PRIVATE_CHAT_TYPE)
 async def vip_choices(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
     if message.text == "Есть":
@@ -73,7 +76,8 @@ async def vip_choices(message):
         await bot.reply_to(message, text=message_text.link_enter, reply_markup=kb)
 
 
-@bot.message_handler(func=lambda message: message.text in (user_kb_list + admin_kb_list))
+@bot.message_handler(func=lambda message: message.text in (
+        user_kb_list + admin_kb_list) and message.chat.type == chat_types.PRIVATE_CHAT_TYPE)
 async def handle_menu(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
     if message.text == "Указать VK ID":
@@ -89,13 +93,13 @@ async def handle_menu(message):
         await get_status(message, user)
 
 
-@bot.message_handler(func=lambda message: True, content_types=['text'])
+@bot.message_handler(func=lambda message: True and message.chat.type == chat_types.PRIVATE_CHAT_TYPE,
+                     content_types=['text'])
 async def handle_text_message(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
     current_state = await state_worker.get_user_state(user)
     if current_state == StateTypes.VK_LINK:
         await check_link(message, user)
-        await get_status(message, user)
     elif current_state == StateTypes.VIP_CODE:
         await get_vip_code(message, user)
 
@@ -125,6 +129,7 @@ async def check_link(message, user):
                 await bot.reply_to(message,
                                    text=message_text.vk_page_success,
                                    disable_web_page_preview=True)
+                await get_status(message, user)
                 await state_worker.reset_user_state(user)
             except Exception as e:
                 await bot.send_message(message.chat.id, f"{e}")
@@ -161,93 +166,68 @@ async def get_vip_code(message, user):
         await bot.send_message(message.chat.id, "Неверный ВИП код")
 
 
-#
-#
-# @bot.message_handler(func=lambda message: message.chat.type in ['private'])
-# async def process_vk_id(message):
-#     try:
-#         user_tg = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
-#     except BotUser.DoesNotExist:
-#         await bot.send_message(message.chat.id, "Пользователь не найден. Введите /start для начала.")
-#         return
-#
-#     if not message.entities or message.entities[0].type != 'url':
-#         await bot.send_message(message.chat.id, "Пожалуйста, введите корректный URL.")
-#         return
-#
-#     vk_page_url = message.text
-#     vk_id = None
-#     if 'vk.com/' in vk_page_url:
-#         vk_id = vk_page_url.split('/')[-1]
-#
-#     if not vk_id.replace('id', '').isdigit():
-#         try:
-#             vk_user_info = vk.utils.resolveScreenName(screen_name=vk_id)
-#             vk_id = vk_user_info['object_id']
-#         except ApiError as e:
-#             await bot.send_message(message.chat.id, f"Ошибка при получении id пользователя: {e}")
-#             return
-#     else:
-#         vk_id = vk_id.replace('id', '')
-#     vk_id = int(vk_id)
-#     kb = keyboard_creator.create_admin_keyboard() if user_tg.is_admin else keyboard_creator.create_user_keyboard()
-#
-#     try:
-#         await database_sync_to_async(BotUser.objects.get)(vk_id=vk_id)
-#         await bot.send_message(message.chat.id, f"Пользователь уже существует", reply_markup=kb)
-#     except BotUser.DoesNotExist:
-#         user_tg.vk_id = vk_id
-#         user_tg.vk_user_url = vk_page_url
-#         await database_sync_to_async(user_tg.save)()
-#         await bot.send_message(message.chat.id, "Регистрация прошла успешно!", reply_markup=kb)
-#
-#
-# @bot.message_handler(func=lambda message: message.chat.type in ['group', 'supergroup'])
-# async def chat_member_handler(message: types.Message):
-#     user_id = message.from_user.id
-#     message_chat = message.chat.username
-#     try:
-#         chat = await db_manager.get_chat_settings(message_chat)
-#
-#         if chat:
-#             chat_id = message.chat.id
-#             chat.chat_id = chat_id
-#             await database_sync_to_async(chat.save)()
-#             try:
-#                 chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
-#                 if chat_user:
-#                     if message.entities and message.entities[0].type == 'url':
-#                         if 'wall' in message.text:
-#                             vk_link = message.text
-#                             await db_manager.create_link(bot_user=chat_user, vk_link=vk_link)
-#                             check_kb = keyboard_creator.create_check_keyboard()
-#                             tasks_qs = await database_sync_to_async(
-#                                 lambda: list(LinksQueue.objects.exclude(bot_user_id=chat_user.id).values()))()
-#                             done_qs = await database_sync_to_async(UserDoneLinks.objects.filter)(bot_user=chat_user)
-#                             done_ids = set(await database_sync_to_async(lambda: {q.link_id for q in done_qs})())
-#                             user_tasks = [task['vk_link'] for task in tasks_qs if task['id'] not in done_ids]
-#
-#                             if user_tasks:
-#                                 await user_handler.mute_user(message)
-#                                 message_text = f"Ваше задание из группы {message_chat}:\n" + '\n'.join(user_tasks)
-#                                 await bot.send_message(user_id,
-#                                                        message_text,
-#                                                        disable_web_page_preview=True,
-#                                                        reply_markup=check_kb)
-#                             else:
-#                                 await bot.send_message(user_id, "Нет заданий")
-#
-#             except BotUser.DoesNotExist:
-#                 await bot.restrict_chat_member(
-#                     chat_id=message.chat.id,
-#                     user_id=user_id,
-#                     until_date=0,
-#                     can_send_messages=False
-#                 )
-#     except BotSettings.DoesNotExist:
-#         user_id = message.from_user.id
-#         exist_chat = message.chat.username
-#         await bot.send_message(user_id, f"Меня пытаються добавить в группу https://t.me/{exist_chat}")
+@bot.message_handler(func=lambda message: message.chat.type in ['group', 'supergroup'])
+async def chat_member_handler(message):
+    user_id = message.from_user.id
+    message_chat = message.chat.username
+    try:
+        chat = await db_manager.get_chat_settings(message_chat)
+        if chat:
+            chat_id = message.chat.id
+            chat.chat_id = chat_id
+            await database_sync_to_async(chat.save)()
+            try:
+                chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
+                if chat_user:
+                    if message.entities and message.entities[0].type == 'url':
+                        if 'wall' in message.text:
+                            vk_link = message.text
+                            if chat_user.status == UserTypes.VIP or chat_user.is_admin:
+                                new_link_queue = await db_manager.create_link_queue(bot_user=chat_user, vk_link=vk_link)
+                                await bot.send_message(user_id,
+                                                       f"Ваша ссылка добавлена в очередь под "
+                                                       f"№ {new_link_queue.queue_number}")
+                            else:
+                                code_task = str(uuid.uuid4()).split('-')[0]
+                                check_kb = keyboard_creator.create_check_keyboard()
+                                tasks_qs = await database_sync_to_async(
+                                    lambda: list(LinksQueue.objects.exclude(bot_user_id=chat_user.id).values()))()
+                                done_qs = await database_sync_to_async(UserDoneLinks.objects.filter)(bot_user=chat_user)
+                                done_ids = set(await database_sync_to_async(lambda: {q.link_id for q in done_qs})())
+                                user_tasks = [task['vk_link'] for task in tasks_qs if task['id'] not in done_ids]
+
+                                if user_tasks:
+                                    await user_handler.mute_user(message)
+
+                                    task_message_text = f"Ваше задание № из группы {message_chat}:\n" + '\n'.join(
+                                        user_tasks)
+                                    await db_manager.create_task_storage(bot_user=chat_user,
+                                                                         message_text=task_message_text,
+                                                                         code=code_task)
+                                    await bot.send_message(user_id,
+                                                           task_message_text,
+                                                           disable_web_page_preview=True,
+                                                           reply_markup=check_kb)
+                                else:
+                                    await bot.send_message(user_id, "Нет заданий")
+                        else:
+                            wrong_link = message.text
+                            await bot.send_message(user_id, f"{message_text.link_error} {wrong_link}")
+                    else:
+                        wrong_message = message.text
+                        await bot.send_message(user_id, f"{wrong_message} - не корректный формат ссылки!!!")
+            except BotUser.DoesNotExist:
+                await bot.restrict_chat_member(
+                    chat_id=message.chat.id,
+                    user_id=user_id,
+                    until_date=0,
+                    can_send_messages=False
+                )
+
+    except BotSettings.DoesNotExist:
+        user_id = message.from_user.id
+        exist_chat = message.chat.username
+        await bot.send_message(user_id, f"Меня пытаються добавить в группу https://t.me/{exist_chat}")
 #
 #
 # @bot.callback_query_handler(func=lambda callback: callback.data == 'check_button')
