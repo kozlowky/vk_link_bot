@@ -2,6 +2,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 
 user_kb_list = ['Указать VK ID', 'Ввести ВИП код', 'Получить статус пользователя']
 admin_kb_list = ['Аннулировать ссылку', 'Принять задание вручную', 'Прислать список ссылок по заданию']
+start_menu_kb = ['Есть, ввести', 'Нет ВИП кода']
 
 
 class KeyboardCreator:
@@ -14,6 +15,10 @@ class KeyboardCreator:
         buttons = [KeyboardButton(text) for text in buttons_text]
         keyboard.add(*buttons)
         return keyboard
+
+    def create_start_keyboard(self):
+        vip_buttons = start_menu_kb
+        return self.create_keyboard(*vip_buttons)
 
     def create_user_keyboard(self):
         user_buttons = user_kb_list

@@ -12,9 +12,10 @@ from channels.db import database_sync_to_async
 from django.conf import settings
 from vk_api import ApiError
 
+from core.apps.bot.constants import message_text
 from core.apps.bot.constants.state_type import StateTypes
 from core.apps.bot.constants.users_type import UserTypes
-from core.apps.bot.kb import KeyboardCreator, user_kb_list, admin_kb_list
+from core.apps.bot.kb import KeyboardCreator, user_kb_list, admin_kb_list, start_menu_kb
 from core.apps.bot.models import BotUser, LinkStorage, LinksQueue, UserDoneLinks, BotSettings, VIPCode
 from core.apps.bot.utils import state_worker
 from core.apps.bot.utils.checker import VkChecker
@@ -37,7 +38,13 @@ db_manager = DatabaseManager()
 async def send_welcome(message):
     user_id = message.from_user.id
     try:
-        await database_sync_to_async(BotUser.objects.get)(tg_id=user_id)
+        user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
+        await state_worker.reset_user_state(user)
+        if user.is_admin:
+            kb = keyboard_creator.create_admin_keyboard()
+        else:
+            kb = keyboard_creator.create_user_keyboard()
+        await bot.reply_to(message, text=message_text.auth_user, reply_markup=kb)
     except BotUser.DoesNotExist:
         first_name = message.from_user.first_name
         last_name = message.from_user.last_name
@@ -46,15 +53,24 @@ async def send_welcome(message):
                                         first_name=first_name,
                                         last_name=last_name,
                                         username=username)
+        kb = keyboard_creator.create_start_keyboard()
+        await bot.reply_to(message, text=message_text.start_message, reply_markup=kb)
+
+
+@bot.message_handler(func=lambda message: message.text in start_menu_kb)
+async def vip_choices(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
-    await state_worker.reset_user_state(user)
+    if message.text == "Есть":
+        await bot.send_message(message.chat.id,
+                               text=message_text.vip_code_enter)
+        await state_worker.set_user_state(user, state=StateTypes.VIP_CODE)
 
-    if user.is_admin:
-        kb = keyboard_creator.create_admin_keyboard()
     else:
-        kb = keyboard_creator.create_user_keyboard()
-
-    await bot.reply_to(message, "Здравствуйте, воспользуйтесь меню снизу:", reply_markup=kb)
+        if user.is_admin:
+            kb = keyboard_creator.create_admin_keyboard()
+        else:
+            kb = keyboard_creator.create_user_keyboard()
+        await bot.reply_to(message, text=message_text.link_enter, reply_markup=kb)
 
 
 @bot.message_handler(func=lambda message: message.text in (user_kb_list + admin_kb_list))
@@ -63,11 +79,11 @@ async def handle_menu(message):
     if message.text == "Указать VK ID":
         await state_worker.set_user_state(user, state=StateTypes.VK_LINK)
         await bot.send_message(message.chat.id,
-                               "Скиньте ссылку на свою страницу ВК")
+                               text=message_text.link_enter)
     elif message.text == "Ввести ВИП код":
         await state_worker.set_user_state(user, state=StateTypes.VIP_CODE)
         await bot.send_message(message.chat.id,
-                               "Скинь код")
+                               text=message_text.vip_code_enter)
     elif message.text == "Получить статус пользователя":
         await state_worker.set_user_state(user, state=StateTypes.GET_STATUS)
         await get_status(message, user)
@@ -79,6 +95,7 @@ async def handle_text_message(message):
     current_state = await state_worker.get_user_state(user)
     if current_state == StateTypes.VK_LINK:
         await check_link(message, user)
+        await get_status(message, user)
     elif current_state == StateTypes.VIP_CODE:
         await get_vip_code(message, user)
 
@@ -105,21 +122,24 @@ async def check_link(message, user):
                 user.vk_id = vk_id
                 user.vk_user_url = vk_page_url
                 await database_sync_to_async(user.save)()
-                await bot.reply_to(message, f"Страница {vk_page_url} успешно привязана к Вашему профилю",
+                await bot.reply_to(message,
+                                   text=message_text.vk_page_success,
                                    disable_web_page_preview=True)
                 await state_worker.reset_user_state(user)
             except Exception as e:
                 await bot.send_message(message.chat.id, f"{e}")
 
         else:
-            await bot.reply_to(message, "Пожалуйста, введите корректный URL.")
+            await bot.reply_to(message, text=message_text.vk_page_error)
 
 
 async def get_status(message, user):
     user_id = user.tg_id
     status = user.get_status_display()
     url = user.vk_user_url
-    await bot.send_message(message.chat.id, f"Страница VK: {url}\nСтатус: {status}\nTelegram ID: {user_id}")
+    await bot.send_message(message.chat.id,
+                           f"Страница VK: {url}\nСтатус: {status}\nTelegram ID: {user_id}",
+                           disable_web_page_preview=True)
     await state_worker.reset_user_state(user)
 
 
@@ -135,32 +155,11 @@ async def get_vip_code(message, user):
             user.vip_code = vip_code_instance
             user.status = UserTypes.VIP
             await database_sync_to_async(user.save)()
-            await bot.send_message(message.chat.id, "Вип код добавлен!!!")
+            await bot.send_message(message.chat.id, message_text.vip_code_success)
         await state_worker.reset_user_state(user)
     except VIPCode.DoesNotExist:
         await bot.send_message(message.chat.id, "Неверный ВИП код")
 
-
-    # if vip_code_instance and user.vip_code is None:
-    #     user.vip_code = vip_code_instance
-    #     user.save()
-    #     await bot.send_message(message.chat.id, "Вип код добавлен!!!")
-    # else:
-    #     await bot.send_message(message.chat.id, "Неверный ВИП код")
-
-    # vip_code_value = await database_sync_to_async(lambda: user.vip_code)()
-    # await bot.send_message(message.chat.id, f"{vip_codes}")
-    # for i in vip_codes:
-    #     a = i.vip_code
-    #     if a == message_id:
-    #         if vip_code_value == a:
-    #             await bot.send_message(message.chat.id, "У Вас уже есть ВИП код!!")
-    #         else:
-    #             user.vip_code = message_id
-    #             user.save()
-    #             await bot.send_message(message.chat.id, "Вип код добавлен!!!")
-    #     else:
-    #         await bot.send_message(message.chat.id, "Неверный ВИП код")
 
 #
 #
