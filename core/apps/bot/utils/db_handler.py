@@ -32,7 +32,7 @@ class DatabaseManager:
     @staticmethod
     @database_sync_to_async
     def create_task_storage(**kwargs):
-        return TaskStorage.objects.create(**kwargs)
+        return TaskStorage.objects.get_or_create(**kwargs)
 
     @staticmethod
     @database_sync_to_async

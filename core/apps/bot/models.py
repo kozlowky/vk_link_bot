@@ -1,6 +1,5 @@
-from datetime import timedelta
-
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from core.apps.bot.constants.users_type import UserTypes, USER_TYPES_CHOICES
 from core.apps.bot.constants.bot_label import BotLabel, BOT_LABEL_CHOICES
@@ -25,9 +24,20 @@ class BotUser(models.Model):
     state_menu = models.IntegerField(_('Состояние'), default=StateTypes.DEFAULT.value, choices=USER_STATES_CHOICES)
     vip_code = models.ForeignKey("VIPCode", related_name='bot_users', verbose_name=_('VIP Код'), null=True,
                                  blank=True, on_delete=models.SET_NULL)
+    vip_end_date = models.DateField(blank=True, null=True, verbose_name=_('Дата окончания VIP кода'))
 
     def __str__(self):
         return self.username or f"{self.first_name} {self.last_name}"
+
+    def update_vip_status(self):
+        if self.status == UserTypes.VIP and self.vip_end_date:
+            now_date = timezone.now().date()
+
+            if self.vip_end_date < now_date:
+                self.status = 0
+                self.vip_end_date = None
+                self.vip_code_id = None
+                self.save()
 
 
 class VIPCode(models.Model):
@@ -104,6 +114,7 @@ class TaskStorage(models.Model):
     code = models.CharField(_('Код задания'), max_length=10, unique=True)
     message_text = models.TextField(_('Текст сообщения'))
     added_at = models.DateTimeField(_('Дата добавления'), auto_now_add=True)
+    chat_task = models.CharField(_('Наименовании группы'), max_length=50, blank=True)
 
     def __str__(self):
         return f"{self.code} - {self.added_at}"
