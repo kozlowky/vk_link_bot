@@ -112,7 +112,7 @@ class VkChecker:
         chat_id = chat_type
         chat_settings = await database_sync_to_async(BotSettings.objects.get)(
             bot_chats=f'https://t.me/{chat_id}')
-        temp_chat = chat_settings.chat_label
+        temp_chat = BotLabel(chat_settings.chat_label).name
         links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
         result = []
         for link in links:
@@ -139,6 +139,24 @@ class VkChecker:
 
         return result
 
+    # async def run_links(self, callback, user_id, chat_type):
+    #     vk_id = user_id.vk_id
+    #     chat_id = chat_type
+    #     chat_settings = await database_sync_to_async(BotSettings.objects.get)(
+    #         bot_chats=f'https://t.me/{chat_id}')
+    #     temp_chat = chat_settings.chat_label
+    #     links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
+    #     result = []
+    #     for link in links:
+    #         owner_id, post_id = await self.get_owner_and_post_ids(link)
+    #         check_likes = await self.get_likes(link, owner_id, post_id, user_id)
+    #
+    #         data = {
+    #             'link': link,
+    #             'likes': check_likes,
+    #         }
+    #
+    #         result.append(data)
 
 
 
