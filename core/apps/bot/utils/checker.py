@@ -1,7 +1,9 @@
 import string
 import re
 
+import requests
 from channels.db import database_sync_to_async
+from vk_api import ApiError
 
 from core.apps.bot.constants.bot_label import BotLabel
 from core.apps.bot.models import BotSettings
@@ -79,9 +81,45 @@ class VkChecker:
         chat_type = chat_settings.chat_label
         return chat_type
 
-    async def run(self, callback, user_id):
+    async def get_user_id(self, vk_page_url):
+        try:
+            response = requests.get(vk_page_url)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as errh:
+            return f"Ошибка HTTP: {errh}"
+
+        vk_id = vk_page_url.split('/')[-1]
+
+        if not vk_id.replace('id', '').isdigit():
+            try:
+                vk_user_info = self.vk.utils.resolveScreenName(screen_name=vk_id)
+                vk_id = vk_user_info['object_id']
+            except ApiError as e:
+                return f'Ошибка при получении id пользователя: {e}'
+        else:
+            vk_id = vk_id.replace('id', '')
+
+        try:
+            vk_id = int(vk_id)
+        except ValueError:
+            return "Невозможно извлечь ID пользователя."
+
+        return vk_id
+
+    async def get_task_code(self, message):
+        task_code = None
+        match = re.search(r's*([a-fA-F0-9]+)', message)
+        if match:
+            task_code = match.group(1)
+        return task_code
+
+    async def run(self, callback, user_id, chat_type):
         vk_id = user_id.vk_id
-        chat_type = await self.get_chat_type(callback)
+        # chat_type = await self.get_chat_type(callback)
+        chat_id = chat_type
+        chat_settings = await database_sync_to_async(BotSettings.objects.get)(
+            bot_chats=f'https://t.me/{chat_id}')
+        temp_chat = BotLabel(chat_settings.chat_label).name
         links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
         result = []
         for link in links:
@@ -95,10 +133,9 @@ class VkChecker:
 
             result.append(data)
 
-            if chat_type == BotLabel.ADVANCED.value:
+            if temp_chat == BotLabel.ADVANCED.value:
                 get_comment = await self.get_vk_comment(owner_id, post_id, vk_id)
                 get_subs = await self.get_subscriptions(owner_id, vk_id)
-
                 data = {
                     'link': link,
                     'likes': check_likes,
@@ -109,6 +146,24 @@ class VkChecker:
 
         return result
 
+    # async def run_links(self, callback, user_id, chat_type):
+    #     vk_id = user_id.vk_id
+    #     chat_id = chat_type
+    #     chat_settings = await database_sync_to_async(BotSettings.objects.get)(
+    #         bot_chats=f'https://t.me/{chat_id}')
+    #     temp_chat = chat_settings.chat_label
+    #     links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
+    #     result = []
+    #     for link in links:
+    #         owner_id, post_id = await self.get_owner_and_post_ids(link)
+    #         check_likes = await self.get_likes(link, owner_id, post_id, user_id)
+    #
+    #         data = {
+    #             'link': link,
+    #             'likes': check_likes,
+    #         }
+    #
+    #         result.append(data)
 
 
 

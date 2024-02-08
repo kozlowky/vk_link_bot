@@ -40,15 +40,8 @@ class LinksQueueModelAdmin(admin.ModelAdmin):
 
 
 class VIPCodeModelAdmin(admin.ModelAdmin):
-    list_display = ['bot_user', 'vip_code', 'expiration_datetime']
-    search_fields = ['id', 'bot_user__username', 'vip_code']
-    list_filter = ['bot_user__username']
-
-    def save_model(self, request, obj, form, change):
-        obj.bot_user.status = UserTypes.VIP.value
-        obj.bot_user.save()
-
-        super().save_model(request, obj, form, change)
+    list_display = ['vip_code']
+    search_fields = ['id', 'vip_code']
 
 
 class BotSettingsAdmin(admin.ModelAdmin):
