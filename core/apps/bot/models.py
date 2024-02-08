@@ -116,6 +116,17 @@ class TaskStorage(models.Model):
     added_at = models.DateTimeField(_('Дата добавления'), auto_now_add=True)
     chat_task = models.CharField(_('Наименовании группы'), max_length=50, blank=True)
     task_completed = models.BooleanField(_('Задание выполнено'), default=False)
+    order_number = models.PositiveIntegerField(_('Порядковый номер'), unique=True)
+
+    def save(self, *args, **kwargs):
+        if not self.order_number:
+            last_task = TaskStorage.objects.order_by('-order_number').first()
+            if last_task:
+                self.order_number = last_task.order_number + 1
+            else:
+                self.order_number = 1
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.code} - {self.added_at}"

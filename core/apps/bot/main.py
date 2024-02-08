@@ -195,7 +195,8 @@ async def get_vip_code(message, user):
             vi_code_end_date = user.vip_end_date.strftime("%d.%m.%Y")
             await database_sync_to_async(user.save)()
             await bot.send_message(message.chat.id, f"✅Есть контакт! Срок действия кода - до {vi_code_end_date}\n"
-                                                    f"Теперь ваши ссылки будут сразу попадать в очередь к другим участникам. Вам не нужно самостоятельно выполнять задания.")
+                                                    f"Теперь ваши ссылки будут сразу попадать в очередь к другим "
+                                                    f"участникам. Вам не нужно самостоятельно выполнять задания.")
         await state_worker.reset_user_state(user)
     except VIPCode.DoesNotExist:
         await bot.send_message(message.chat.id, "Неверный ВИП код")
@@ -295,7 +296,7 @@ async def check_task(callback: types.CallbackQuery):
                     )
 
         if posts_without_like:
-            message = (f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n") + "\n".join(
+            message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n" + "\n".join(
                 posts_without_like)
             check_kb = keyboard_creator.create_check_keyboard()
             await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(message_text=message)
@@ -326,25 +327,29 @@ async def check_task(callback: types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda callback: callback.data == 'accept_manually')
 async def manual_accept_task(callback: types.CallbackQuery):
-    sender_user = await database_sync_to_async(BotUser.objects.get)(tg_id=callback.from_user.id)
     task_message = callback.message.text
     user_id = re.search(r'Пользователь (\d+)', task_message).group(1)
     task_code = re.search(r'№ (\w+)', task_message).group(1)
+
+    sender_user = await database_sync_to_async(BotUser.objects.get)(tg_id=callback.from_user.id)
     target_user = await database_sync_to_async(BotUser.objects.get)(tg_id=user_id)
+
     task = await database_sync_to_async(TaskStorage.objects.get)(code=task_code)
-    if task.task_completed:
-        await bot.send_message(chat_id=callback.message.chat.id, text=f"Задание № {task_code} уже ВЫПОЛНЕНО")
-    else:
-        task.task_completed = True
-        await database_sync_to_async(task.save)()
-        link_storage = await database_sync_to_async(LinkStorage.objects.get)(code=task_code)
-        link = link_storage.vk_link
-        link_storage.is_approved = True
-        await database_sync_to_async(link_storage.save)()
-        link_queue = await db_manager.create_link_queue(bot_user=target_user, vk_link=link)
-        await database_sync_to_async(link_queue.save)()
-        done_link = await db_manager.create_done_list(bot_user=target_user, link=link_queue)
-        await database_sync_to_async(done_link.save)()
-        await bot.send_message(chat_id=callback.message.chat.id,
-                               text=f"Задание № {task_code} переведено в статус ВЫПОЛНЕНО")
+    task.task_completed = True
+    await database_sync_to_async(task.save)()
+
+    link_storage = await database_sync_to_async(LinkStorage.objects.get)(code=task_code)
+    link_storage.is_approved = True
+    await database_sync_to_async(link_storage.save)()
+
+    link = link_storage.vk_link
+    link_queue = await db_manager.create_link_queue(bot_user=target_user, vk_link=link)
+    await database_sync_to_async(link_queue.save)()
+
+    done_link = await db_manager.create_done_list(bot_user=target_user, link=link_queue)
+    await database_sync_to_async(done_link.save)()
+
+    await bot.send_message(chat_id=callback.message.chat.id,
+                           text=f"Задание № {task_code} переведено в статус ВЫПОЛНЕНО")
     await state_worker.reset_user_state(sender_user)
+
