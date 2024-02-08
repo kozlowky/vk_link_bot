@@ -75,6 +75,7 @@ async def vip_choices(message):
         else:
             kb = keyboard_creator.create_user_keyboard()
         await bot.reply_to(message, text=message_text.link_enter, reply_markup=kb)
+        await state_worker.set_user_state(user, state=StateTypes.VK_LINK)
 
 
 @bot.message_handler(func=lambda message: message.text in (
@@ -97,8 +98,9 @@ async def handle_menu(message):
         pass
     elif message.text == "Принять задание вручную" and user.is_admin is True:
         await state_worker.set_user_state(user, state=StateTypes.ACCEPT_TASK_MANUALLY)
-        await bot.send_message(message.chat.id, f"Отправьте адрес страницы VK пользователя для которого нужно принять задание вручную")
-        await accept_manualy(message, user)
+        await bot.send_message(message.chat.id,
+                               f"Отправьте адрес страницы VK пользователя для которого нужно принять задание вручную")
+        # await accept_manualy(message, user)
     elif message.text == "Прислать список ссылок по заданию" and user.is_admin is True:
         await state_worker.set_user_state(user, state=StateTypes.GET_TASK_LINKS)
         await get_last_task(message, user)
@@ -120,19 +122,26 @@ async def handle_text_message(message):
 async def accept_manualy(message, user):
     user_input = await database_sync_to_async(BotUser.objects.get)(vk_user_url=message.text)
     ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(bot_user=user_input, task_completed=False)
-    last_task = await database_sync_to_async(lambda: ts_qs.last())()
-    accept_kb = keyboard_creator.create_accept_manualy()
-    await bot.send_message(chat_id=message.chat.id,
-                           text=f"Пользователь {user_input.tg_id}\n\n{last_task.message_text}",
-                           disable_web_page_preview=True,
-                           reply_markup=accept_kb)
+    if not await database_sync_to_async(ts_qs.exists)():
+        await bot.send_message(chat_id=message.chat.id, text=f"У пользователя ID: {user_input.tg_id} нет заданий")
+    else:
+        last_task = await database_sync_to_async(lambda: ts_qs.last())()
+        accept_kb = keyboard_creator.create_accept_manualy()
+        await bot.send_message(chat_id=message.chat.id,
+                               text=f"Пользователь {user_input.tg_id}\n\n{last_task.message_text}",
+                               disable_web_page_preview=True,
+                               reply_markup=accept_kb)
 
 
 async def get_last_task(message, user):
     check_kb = keyboard_creator.create_check_keyboard()
     ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(bot_user=user, task_completed=False)
-    last_chat_type = await database_sync_to_async(lambda: ts_qs.last())()
-    await bot.reply_to(message, f"{last_chat_type.message_text}", disable_web_page_preview=True, reply_markup=check_kb)
+    if not await database_sync_to_async(ts_qs.exists)():
+        await bot.send_message(chat_id=message.chat.id, text="У вас нет заданий")
+    else:
+        last_chat_type = await database_sync_to_async(lambda: ts_qs.last())()
+        await bot.reply_to(message, f"{last_chat_type.message_text}", disable_web_page_preview=True,
+                           reply_markup=check_kb)
 
 
 async def check_link(message, user):
@@ -286,7 +295,8 @@ async def check_task(callback: types.CallbackQuery):
                     )
 
         if posts_without_like:
-            message = (f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n") + "\n".join(posts_without_like)
+            message = (f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n") + "\n".join(
+                posts_without_like)
             check_kb = keyboard_creator.create_check_keyboard()
             await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(message_text=message)
             await bot.edit_message_text(chat_id=callback.message.chat.id,
@@ -300,7 +310,8 @@ async def check_task(callback: types.CallbackQuery):
                 bot_user=user_id).last())()
             vk_link = links_qs.vk_link
             links_qs.is_approved = True
-            accepted_task = await database_sync_to_async(lambda: TaskStorage.objects.filter(bot_user=user_id, task_completed=False).last())()
+            accepted_task = await database_sync_to_async(
+                lambda: TaskStorage.objects.filter(bot_user=user_id, task_completed=False).last())()
             accepted_task.task_completed = True
             await database_sync_to_async(links_qs.save)()
             await database_sync_to_async(accepted_task.save)()
@@ -334,6 +345,6 @@ async def manual_accept_task(callback: types.CallbackQuery):
         await database_sync_to_async(link_queue.save)()
         done_link = await db_manager.create_done_list(bot_user=target_user, link=link_queue)
         await database_sync_to_async(done_link.save)()
-        await bot.send_message(chat_id=callback.message.chat.id, text=f"Задание № {task_code} переведено в статус ВЫПОЛНЕНО")
+        await bot.send_message(chat_id=callback.message.chat.id,
+                               text=f"Задание № {task_code} переведено в статус ВЫПОЛНЕНО")
     await state_worker.reset_user_state(sender_user)
-
