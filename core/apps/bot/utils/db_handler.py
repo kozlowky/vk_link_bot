@@ -37,7 +37,7 @@ class DatabaseManager:
     @staticmethod
     @database_sync_to_async
     def create_done_list(**kwargs):
-        return UserDoneLinks.objects.update_or_create(defaults=kwargs, **kwargs)
+        return UserDoneLinks.objects.create(**kwargs)
 
     @staticmethod
     @database_sync_to_async

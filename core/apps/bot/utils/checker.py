@@ -106,6 +106,13 @@ class VkChecker:
 
         return vk_id
 
+    async def get_task_code(self, message):
+        task_code = None
+        match = re.search(r's*([a-fA-F0-9]+)', message)
+        if match:
+            task_code = match.group(1)
+        return task_code
+
     async def run(self, callback, user_id, chat_type):
         vk_id = user_id.vk_id
         # chat_type = await self.get_chat_type(callback)

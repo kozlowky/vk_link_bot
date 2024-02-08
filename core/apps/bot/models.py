@@ -57,7 +57,7 @@ class LinkStorage(models.Model):
 
     bot_user = models.ForeignKey('BotUser', related_name='vk_links', verbose_name=_('Пользователь'),
                                  on_delete=models.SET_NULL, blank=True, null=True)
-    # code = models.CharField(_("Код ссылки"), max_length=128)
+    code = models.CharField(_('Код ссылки'), max_length=10, unique=True)
     vk_link = models.CharField(_('ВК Ссылка'), max_length=255)
     added_at = models.DateTimeField(_('Дата отправки'), auto_now_add=True)
     is_approved = models.BooleanField(_('Ссылка подтверждена'), default=False)
@@ -115,6 +115,7 @@ class TaskStorage(models.Model):
     message_text = models.TextField(_('Текст сообщения'))
     added_at = models.DateTimeField(_('Дата добавления'), auto_now_add=True)
     chat_task = models.CharField(_('Наименовании группы'), max_length=50, blank=True)
+    task_completed = models.BooleanField(_('Задание выполнено'), default=False)
 
     def __str__(self):
         return f"{self.code} - {self.added_at}"
