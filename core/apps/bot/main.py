@@ -352,4 +352,3 @@ async def manual_accept_task(callback: types.CallbackQuery):
     await bot.send_message(chat_id=callback.message.chat.id,
                            text=f"Задание № {task_code} переведено в статус ВЫПОЛНЕНО")
     await state_worker.reset_user_state(sender_user)
-
