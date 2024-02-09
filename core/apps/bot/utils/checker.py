@@ -113,13 +113,28 @@ class VkChecker:
             task_code = match.group(1)
         return task_code
 
-    async def run(self, callback, user_id, chat_type):
+    async def run_advanced_chat(self, callback, user_id):
         vk_id = user_id.vk_id
         # chat_type = await self.get_chat_type(callback)
-        chat_id = chat_type
-        chat_settings = await database_sync_to_async(BotSettings.objects.get)(
-            bot_chats=f'https://t.me/{chat_id}')
-        temp_chat = BotLabel(chat_settings.chat_label).name
+
+        links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
+        result = []
+        for link in links:
+            owner_id, post_id = await self.get_owner_and_post_ids(link)
+            check_likes = await self.get_likes(link, owner_id, post_id, user_id)
+            get_comment = await self.get_vk_comment(owner_id, post_id, vk_id)
+            get_subs = await self.get_subscriptions(owner_id, vk_id)
+            data = {
+                'link': link,
+                'likes': check_likes,
+                'commnet': get_comment,
+                'sub': get_subs,
+            }
+            result.append(data)
+
+        return result
+
+    async def run_default_chat(self, callback, user_id):
         links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
         result = []
         for link in links:
@@ -132,40 +147,6 @@ class VkChecker:
             }
 
             result.append(data)
-
-            if temp_chat == BotLabel.ADVANCED.value:
-                get_comment = await self.get_vk_comment(owner_id, post_id, vk_id)
-                get_subs = await self.get_subscriptions(owner_id, vk_id)
-                data = {
-                    'link': link,
-                    'likes': check_likes,
-                    'commnet': get_comment,
-                    'sub': get_subs,
-                }
-                result.append(data)
-
         return result
-
-    # async def run_links(self, callback, user_id, chat_type):
-    #     vk_id = user_id.vk_id
-    #     chat_id = chat_type
-    #     chat_settings = await database_sync_to_async(BotSettings.objects.get)(
-    #         bot_chats=f'https://t.me/{chat_id}')
-    #     temp_chat = chat_settings.chat_label
-    #     links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
-    #     result = []
-    #     for link in links:
-    #         owner_id, post_id = await self.get_owner_and_post_ids(link)
-    #         check_likes = await self.get_likes(link, owner_id, post_id, user_id)
-    #
-    #         data = {
-    #             'link': link,
-    #             'likes': check_likes,
-    #         }
-    #
-    #         result.append(data)
-
-
-
 
 

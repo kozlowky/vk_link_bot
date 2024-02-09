@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 
 import telebot
+from django.core.exceptions import BadRequest
 from django.utils import timezone
 from telebot import types
 from telebot.async_telebot import AsyncTeleBot
@@ -13,9 +14,11 @@ import vk_api
 from channels.db import database_sync_to_async
 
 from django.conf import settings
+from telebot.asyncio_helper import ApiTelegramException
 
 from core.apps.bot.constants import message_text
 from core.apps.bot.constants import chat_types
+from core.apps.bot.constants.bot_label import BotLabel
 from core.apps.bot.constants.state_type import StateTypes
 from core.apps.bot.constants.users_type import UserTypes
 from core.apps.bot.kb import KeyboardCreator, user_kb_list, admin_kb_list, start_menu_kb
@@ -275,54 +278,160 @@ async def check_task(callback: types.CallbackQuery):
     ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(bot_user=user_id, code=task_code)
     last_chat_type = await database_sync_to_async(lambda: ts_qs.last())()
     chat_type = last_chat_type.chat_task
+    chat_settings = await database_sync_to_async(BotSettings.objects.get)(
+        bot_chats=f'https://t.me/{chat_type}')
+    chat = BotLabel(chat_settings.chat_label).name
     if callback.data == 'check_button':
-        data = await checker_instance.run(callback.message, user_id, chat_type)
 
-        posts_without_like = []
-        for item in data:
-            link = item.get('link')
-            likes = item.get('likes')
+        if chat == "DEFAULT":
+            data = await checker_instance.run_default_chat(callback.message, user_id)
 
-            if not likes:
-                posts_without_like.append(link)
+            posts_without_like = []
+            for item in data:
+                link = item.get('link')
+                likes = item.get('likes')
 
-            tasks_qs = await database_sync_to_async(lambda: list(LinksQueue.objects.all().values()))()
-            for task in tasks_qs:
-                if task['vk_link'] == link and link not in posts_without_like:
-                    task_instance = await database_sync_to_async(LinksQueue.objects.get)(id=task['id'])
-                    await database_sync_to_async(UserDoneLinks.objects.get_or_create)(
-                        bot_user=user_id,
-                        link=task_instance
-                    )
+                if not likes:
+                    posts_without_like.append(link)
 
-        if posts_without_like:
-            message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n" + "\n".join(
-                posts_without_like)
-            check_kb = keyboard_creator.create_check_keyboard()
-            await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(message_text=message)
-            await bot.edit_message_text(chat_id=callback.message.chat.id,
-                                        message_id=callback.message.message_id,
-                                        text=message,
-                                        disable_web_page_preview=True,
-                                        reply_markup=check_kb)
-        else:
-            message = 'Задание принято!'
-            links_qs = await database_sync_to_async(lambda: LinkStorage.objects.filter(
-                bot_user=user_id).last())()
-            vk_link = links_qs.vk_link
-            links_qs.is_approved = True
-            accepted_task = await database_sync_to_async(
-                lambda: TaskStorage.objects.filter(bot_user=user_id, task_completed=False).last())()
-            accepted_task.task_completed = True
-            await database_sync_to_async(links_qs.save)()
-            await database_sync_to_async(accepted_task.save)()
-            await db_manager.create_link_queue(bot_user=user_id, vk_link=vk_link)
-            await bot.edit_message_text(chat_id=callback.message.chat.id,
-                                        message_id=callback.message.message_id,
-                                        text=message,
-                                        disable_web_page_preview=True
-                                        )
-            await user_handler.unmute_user(callback, user_id)
+                tasks_qs = await database_sync_to_async(lambda: list(LinksQueue.objects.all().values()))()
+                for task in tasks_qs:
+                    if task['vk_link'] == link and link not in posts_without_like:
+                        task_instance = await database_sync_to_async(LinksQueue.objects.get)(id=task['id'])
+                        await database_sync_to_async(UserDoneLinks.objects.get_or_create)(
+                            bot_user=user_id,
+                            link=task_instance
+                        )
+
+            if posts_without_like:
+                message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n" + "\n".join(
+                    posts_without_like)
+                check_kb = keyboard_creator.create_check_keyboard()
+
+                try:
+                    await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
+                        message_text=message)
+                    await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                            message_id=callback.message.message_id,
+                                            text=message,
+                                            disable_web_page_preview=True,
+                                            reply_markup=check_kb)
+                except ApiTelegramException:
+                    message_ext = f"Вы не завершили предыдущее {message}"
+                    await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                            message_id=callback.message.message_id,
+                                            text=message_ext,
+                                            disable_web_page_preview=True,
+                                            reply_markup=check_kb)
+                    await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
+                        message_text=message)
+            else:
+                message = 'Задание принято!'
+                links_qs = await database_sync_to_async(lambda: LinkStorage.objects.filter(
+                    bot_user=user_id).last())()
+                vk_link = links_qs.vk_link
+                links_qs.is_approved = True
+                accepted_task = await database_sync_to_async(
+                    lambda: TaskStorage.objects.filter(bot_user=user_id, task_completed=False).last())()
+                accepted_task.task_completed = True
+                await database_sync_to_async(links_qs.save)()
+                await database_sync_to_async(accepted_task.save)()
+                await db_manager.create_link_queue(bot_user=user_id, vk_link=vk_link)
+                await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                            message_id=callback.message.message_id,
+                                            text=message,
+                                            disable_web_page_preview=True
+                                            )
+                await user_handler.unmute_user(callback, user_id)
+
+        if chat == "ADVANCED":
+            data = await checker_instance.run_advanced_chat(callback.message, user_id)
+            subs_data = []
+            comments_data = []
+            posts_without_like = []
+
+            data_dict = {
+                'subs': subs_data,
+                'comments': comments_data,
+                'links': posts_without_like
+            }
+
+            for item in data:
+                link = item.get('link')
+                likes = item.get('likes')
+                comments = item.get('comment')
+                subs = item.get('subs')
+
+                if not likes:
+                    posts_without_like.append(link)
+
+                if comments is None or comments < 5:
+                    comments_data.append(link)
+
+                if subs is None:
+                    subs_data.append(link)
+
+                tasks_qs = await database_sync_to_async(lambda: list(LinksQueue.objects.all().values()))()
+                for task in tasks_qs:
+                    link_present = any(link in sublist for sublist in data_dict.values())
+
+                    # if task['vk_link'] == link and link not in posts_without_like:
+                    if task['vk_link'] == link and not link_present:
+                        task_instance = await database_sync_to_async(LinksQueue.objects.get)(id=task['id'])
+                        await database_sync_to_async(UserDoneLinks.objects.get_or_create)(
+                            bot_user=user_id,
+                            link=task_instance
+                        )
+            if data_dict:
+                link_without_likes = data_dict.pop('links')
+                out_comment = data_dict.pop('comments')
+                out_subs = data_dict.pop('subs')
+                print(1)
+
+
+
+            # if posts_without_like:
+            #     message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n" + "\n".join(
+            #         posts_without_like)
+            #     check_kb = keyboard_creator.create_check_keyboard()
+            #
+            #     try:
+            #         await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
+            #             message_text=message)
+            #         await bot.edit_message_text(chat_id=callback.message.chat.id,
+            #                                     message_id=callback.message.message_id,
+            #                                     text=message,
+            #                                     disable_web_page_preview=True,
+            #                                     reply_markup=check_kb)
+            #     except ApiTelegramException:
+            #         message_ext = f"Вы не завершили предыдущее {message}"
+            #         await bot.edit_message_text(chat_id=callback.message.chat.id,
+            #                                     message_id=callback.message.message_id,
+            #                                     text=message_ext,
+            #                                     disable_web_page_preview=True,
+            #                                     reply_markup=check_kb)
+            #         await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
+            #             message_text=message)
+            # elif subs_data:
+            #     pass
+            else:
+                message = 'Задание принято!'
+                links_qs = await database_sync_to_async(lambda: LinkStorage.objects.filter(
+                    bot_user=user_id).last())()
+                vk_link = links_qs.vk_link
+                links_qs.is_approved = True
+                accepted_task = await database_sync_to_async(
+                    lambda: TaskStorage.objects.filter(bot_user=user_id, task_completed=False).last())()
+                accepted_task.task_completed = True
+                await database_sync_to_async(links_qs.save)()
+                await database_sync_to_async(accepted_task.save)()
+                await db_manager.create_link_queue(bot_user=user_id, vk_link=vk_link)
+                await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                            message_id=callback.message.message_id,
+                                            text=message,
+                                            disable_web_page_preview=True
+                                            )
+                await user_handler.unmute_user(callback, user_id)
 
 
 @bot.callback_query_handler(func=lambda callback: callback.data == 'accept_manually')
