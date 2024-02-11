@@ -37,6 +37,7 @@ VK_ACCESS_TOKEN = env.str('VK_ACCESS_TOKEN')
 # Application definition
 
 INSTALLED_APPS = [
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

@@ -67,7 +67,7 @@ async def send_welcome(message):
     func=lambda message: message.text in start_menu_kb and message.chat.type == chat_types.PRIVATE_CHAT_TYPE)
 async def vip_choices(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
-    if message.text == "Есть":
+    if message.text == "Есть, ввести":
         await bot.send_message(message.chat.id,
                                text=message_text.vip_code_enter)
         await state_worker.set_user_state(user, state=StateTypes.VIP_CODE)
@@ -273,6 +273,7 @@ async def chat_member_handler(message):
 
 @bot.callback_query_handler(func=lambda callback: callback.data == 'check_button')
 async def check_task(callback: types.CallbackQuery):
+    # Add check_link
     user_id = await database_sync_to_async(BotUser.objects.get)(tg_id=callback.from_user.id)
     task_code = await checker_instance.get_task_code(callback.message.text)
     ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(bot_user=user_id, code=task_code)
@@ -386,10 +387,16 @@ async def check_task(callback: types.CallbackQuery):
                 link_without_likes = data_dict.pop('links')
                 out_comment = data_dict.pop('comments')
                 out_subs = data_dict.pop('subs')
+
+                for link in link_without_likes:
+                    link_message = f"Не поставлены лайки: {link}\n"
+                for comment in out_comment:
+                    comment_message = f"Отсутсвтуют комментарии: {comment}\n"
+                for sub in out_subs:
+                    subs_message = f"Отсутствует подписка: {sub}"
+
+                global_message = f"Задание № {task_code}\n{link_message}{comment_message}{subs_message}"
                 print(1)
-
-
-
             # if posts_without_like:
             #     message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n" + "\n".join(
             #         posts_without_like)
