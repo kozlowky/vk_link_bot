@@ -33,6 +33,7 @@ ALLOWED_HOSTS = ['*']
 
 TOKEN_BOT = env.str('TOKEN_BOT')
 VK_ACCESS_TOKEN = env.str('VK_ACCESS_TOKEN')
+CSRF_TRUSTED_ORIGINS = ['http://81.31.247.67:8000']
 
 # Application definition
 
