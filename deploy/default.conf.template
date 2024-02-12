@@ -1,0 +1,60 @@
+# Enable upgrading of connection (and websocket proxying) depending on the
+# presence of the upgrade field in the client request header
+map ${DOLLAR}http_upgrade ${DOLLAR}connection_upgrade {
+   default upgrade;
+   '' close;
+}
+
+server {
+    listen 80;
+    server_name localhost;
+
+    server_tokens off;
+
+    client_max_body_size 1500m;
+
+    location /robots.txt {
+        alias ${STATIC_PATH}/robots.txt;
+        access_log off;
+    }
+
+    location /static {
+        alias ${STATIC_PATH};
+        access_log off;
+    }
+
+    location / {
+        proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+
+        # Require http version 1.1 to allow for upgrade requests
+        proxy_http_version 1.1;
+
+        # We want proxy_buffering off for proxying to websockets.
+        proxy_buffering off;
+
+        # http://en.wikipedia.org/wiki/X-Forwarded-For
+        proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
+
+        # enable this if you use HTTPS:
+        # proxy_set_header X-Forwarded-Proto https;
+        # pass the Host: header from the client for the sake of redirects
+        proxy_set_header Host ${DOLLAR}http_host;
+
+        # We've set the Host header, so we don't need Nginx to muddle
+        # about with redirects
+        proxy_redirect off;
+
+        # Depending on the request value, set the Upgrade and
+        # connection headers
+        proxy_set_header Upgrade ${DOLLAR}http_upgrade;
+        proxy_set_header Connection ${DOLLAR}connection_upgrade;
+
+        keepalive_timeout 604800;
+        proxy_connect_timeout 604800;
+        proxy_send_timeout 604800;
+        proxy_read_timeout 604800;
+
+        proxy_pass http://${APP_PROXY_LINK}:${APP_PROXY_PORT};
+    }
+}
