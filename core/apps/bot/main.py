@@ -4,7 +4,6 @@ import uuid
 from datetime import timedelta
 
 import telebot
-from django.core.exceptions import BadRequest
 from django.utils import timezone
 from telebot import types
 from telebot.async_telebot import AsyncTeleBot
@@ -44,13 +43,13 @@ checker_instance = checker.VkChecker(vk, bot)
 async def send_welcome(message):
     user_id = message.from_user.id
     try:
-        user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
+        user = await database_sync_to_async(BotUser.objects.get)(tg_id=user_id)
         await state_worker.reset_user_state(user)
         if user.is_admin:
-            kb = keyboard_creator.create_admin_keyboard()
+            keyboard = keyboard_creator.create_admin_keyboard()
         else:
-            kb = keyboard_creator.create_user_keyboard()
-        await bot.reply_to(message, text=message_text.auth_user, reply_markup=kb)
+            keyboard = keyboard_creator.create_user_keyboard()
+        await bot.reply_to(message, text=message_text.auth_user, reply_markup=keyboard)
     except BotUser.DoesNotExist:
         first_name = message.from_user.first_name
         last_name = message.from_user.last_name
@@ -59,8 +58,8 @@ async def send_welcome(message):
                                         first_name=first_name,
                                         last_name=last_name,
                                         username=username)
-        kb = keyboard_creator.create_start_keyboard()
-        await bot.reply_to(message, text=message_text.start_message, reply_markup=kb)
+        start_keyboard = keyboard_creator.create_start_keyboard()
+        await bot.reply_to(message, text=message_text.start_message, reply_markup=start_keyboard)
 
 
 @bot.message_handler(
@@ -68,16 +67,14 @@ async def send_welcome(message):
 async def vip_choices(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
     if message.text == "Есть, ввести":
-        await bot.send_message(message.chat.id,
-                               text=message_text.vip_code_enter)
+        await bot.send_message(message.chat.id, text=message_text.vip_code_enter)
         await state_worker.set_user_state(user, state=StateTypes.VIP_CODE)
-
     else:
         if user.is_admin:
-            kb = keyboard_creator.create_admin_keyboard()
+            keyboard = keyboard_creator.create_admin_keyboard()
         else:
-            kb = keyboard_creator.create_user_keyboard()
-        await bot.reply_to(message, text=message_text.link_enter, reply_markup=kb)
+            keyboard = keyboard_creator.create_user_keyboard()
+        await bot.reply_to(message, text=message_text.link_enter, reply_markup=keyboard)
         await state_worker.set_user_state(user, state=StateTypes.VK_LINK)
 
 
@@ -87,12 +84,10 @@ async def handle_menu(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
     if message.text == "Указать VK ID":
         await state_worker.set_user_state(user, state=StateTypes.VK_LINK)
-        await bot.send_message(message.chat.id,
-                               text=message_text.link_enter)
+        await bot.send_message(message.chat.id, text=message_text.link_enter)
     elif message.text == "Ввести ВИП код":
         await state_worker.set_user_state(user, state=StateTypes.VIP_CODE)
-        await bot.send_message(message.chat.id,
-                               text=message_text.vip_code_enter)
+        await bot.send_message(message.chat.id, text=message_text.vip_code_enter)
     elif message.text == "Получить статус пользователя":
         await state_worker.set_user_state(user, state=StateTypes.GET_STATUS)
         await get_status(message, user)
@@ -114,17 +109,19 @@ async def handle_menu(message):
 async def handle_text_message(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
     current_state = await state_worker.get_user_state(user)
+
     if current_state == StateTypes.VK_LINK:
-        await check_link(message, user)
+        await process_vk_link(message, user)
     elif current_state == StateTypes.VIP_CODE:
-        await get_vip_code(message, user)
+        await process_vip_code(message, user)
     elif current_state == StateTypes.ACCEPT_TASK_MANUALLY:
-        await accept_manualy(message, user)
+        await process_accept_manually(message)
 
 
-async def accept_manualy(message, user):
+async def process_accept_manually(message):
     user_input = await database_sync_to_async(BotUser.objects.get)(vk_user_url=message.text)
     ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(bot_user=user_input, task_completed=False)
+
     if not await database_sync_to_async(ts_qs.exists)():
         await bot.send_message(chat_id=message.chat.id, text=f"У пользователя ID: {user_input.tg_id} нет заданий")
     else:
@@ -139,6 +136,7 @@ async def accept_manualy(message, user):
 async def get_last_task(message, user):
     check_kb = keyboard_creator.create_check_keyboard()
     ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(bot_user=user, task_completed=False)
+
     if not await database_sync_to_async(ts_qs.exists)():
         await bot.send_message(chat_id=message.chat.id, text="У вас нет заданий")
     else:
@@ -147,23 +145,25 @@ async def get_last_task(message, user):
                            reply_markup=check_kb)
 
 
-async def check_link(message, user):
+async def process_vk_link(message, user):
     vk_page_url = message.text
+
     if user.vk_user_url == vk_page_url:
-        await bot.reply_to(message, f"Страница {vk_page_url} уже привязна к Вашему профилю",
+        await bot.reply_to(message, f"Страница {vk_page_url} уже привязана к Вашему профилю",
                            disable_web_page_preview=True)
     else:
         if 'vk.com/' in vk_page_url:
             vk_id = await checker_instance.get_user_id(vk_page_url)
+
             try:
                 user.vk_id = vk_id
                 user.vk_user_url = vk_page_url
                 await database_sync_to_async(user.save)()
-                await bot.reply_to(message,
-                                   text=message_text.vk_page_success,
-                                   disable_web_page_preview=True)
+
+                await bot.reply_to(message, text=message_text.vk_page_success, disable_web_page_preview=True)
                 await get_status(message, user)
                 await state_worker.reset_user_state(user)
+
             except Exception as e:
                 if ValueError:
                     await bot.send_message(message.chat.id, message_text.vk_page_error)
@@ -184,11 +184,13 @@ async def get_status(message, user):
     await state_worker.reset_user_state(user)
 
 
-async def get_vip_code(message, user):
+async def process_vip_code(message, user):
     vip_code_user_value = message.text
+
     try:
         vip_code_instance = await database_sync_to_async(VIPCode.objects.get)(vip_code=vip_code_user_value)
         user_vip_code = await database_sync_to_async(lambda: user.vip_code)()
+
         if user_vip_code:
             await bot.send_message(message.chat.id, "У Вас уже есть Вип код")
         else:
@@ -197,10 +199,14 @@ async def get_vip_code(message, user):
             user.vip_end_date = timezone.now() + timedelta(days=30)
             vi_code_end_date = user.vip_end_date.strftime("%d.%m.%Y")
             await database_sync_to_async(user.save)()
-            await bot.send_message(message.chat.id, f"✅Есть контакт! Срок действия кода - до {vi_code_end_date}\n"
-                                                    f"Теперь ваши ссылки будут сразу попадать в очередь к другим "
-                                                    f"участникам. Вам не нужно самостоятельно выполнять задания.")
+
+            await bot.send_message(message.chat.id,
+                                   f"✅Есть контакт! Срок действия кода - до {vi_code_end_date}\n"
+                                   f"Теперь ваши ссылки будут сразу попадать в очередь к другим "
+                                   f"участникам. Вам не нужно самостоятельно выполнять задания.")
+
         await state_worker.reset_user_state(user)
+
     except VIPCode.DoesNotExist:
         await bot.send_message(message.chat.id, "Неверный ВИП код")
 
@@ -209,23 +215,28 @@ async def get_vip_code(message, user):
 async def chat_member_handler(message):
     user_id = message.from_user.id
     message_chat = message.chat.username
+
     try:
         chat = await db_manager.get_chat_settings(message_chat)
+
         if chat:
             chat_id = message.chat.id
             chat.chat_id = chat_id
             await database_sync_to_async(chat.save)()
+
             try:
-                chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
-                if chat_user:
+                chat_user = await database_sync_to_async(BotUser.objects.get)(tg_id=user_id)
+                vk_link = chat_user.vk_user_url
+
+                if chat_user and vk_link:
                     if message.entities and message.entities[0].type == 'url':
                         if 'wall' in message.text:
                             vk_link = message.text
+
                             if chat_user.status == UserTypes.VIP or chat_user.is_admin:
                                 new_link_queue = await db_manager.create_link_queue(bot_user=chat_user, vk_link=vk_link)
                                 await bot.send_message(user_id,
-                                                       f"Ваша ссылка добавлена в очередь под "
-                                                       f"№ {new_link_queue.queue_number}")
+                                                       f"Ваша ссылка добавлена в очередь под № {new_link_queue.queue_number}")
                             else:
                                 code = str(uuid.uuid4()).split('-')[0]
                                 await db_manager.create_link(bot_user=chat_user, vk_link=vk_link, code=code)
@@ -239,15 +250,12 @@ async def chat_member_handler(message):
                                 if user_tasks:
                                     await user_handler.mute_user(message)
 
-                                    task_message_text = f"Ваше задание № {code}:\n" + '\n'.join(
-                                        user_tasks)
+                                    task_message_text = f"Ваше задание № {code}:\n" + '\n'.join(user_tasks)
                                     await db_manager.create_task_storage(bot_user=chat_user,
                                                                          message_text=task_message_text,
                                                                          code=code,
                                                                          chat_task=message_chat)
-                                    await bot.send_message(user_id,
-                                                           task_message_text,
-                                                           disable_web_page_preview=True,
+                                    await bot.send_message(user_id, task_message_text, disable_web_page_preview=True,
                                                            reply_markup=check_kb)
                                 else:
                                     await bot.send_message(user_id, "Нет заданий")
@@ -257,6 +265,8 @@ async def chat_member_handler(message):
                     else:
                         wrong_message = message.text
                         await bot.send_message(user_id, f"{wrong_message} - не корректный формат ссылки!!!")
+                else:
+                    await bot.send_message(user_id, "Вы не привязали рабочую VK страницу")
             except BotUser.DoesNotExist:
                 await bot.restrict_chat_member(
                     chat_id=message.chat.id,
@@ -266,28 +276,27 @@ async def chat_member_handler(message):
                 )
 
     except BotSettings.DoesNotExist:
-        user_id = message.from_user.id
         exist_chat = message.chat.username
         await bot.send_message(user_id, f"Меня пытаються добавить в группу https://t.me/{exist_chat}")
 
 
 @bot.callback_query_handler(func=lambda callback: callback.data == 'check_button')
 async def check_task(callback: types.CallbackQuery):
-    # Add check_link
     user_id = await database_sync_to_async(BotUser.objects.get)(tg_id=callback.from_user.id)
     task_code = await checker_instance.get_task_code(callback.message.text)
-    ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(bot_user=user_id, code=task_code)
-    last_chat_type = await database_sync_to_async(lambda: ts_qs.last())()
-    chat_type = last_chat_type.chat_task
+    task_storage_qs = await database_sync_to_async(TaskStorage.objects.filter)(bot_user=user_id, code=task_code)
+    last_task_storage = await database_sync_to_async(lambda: task_storage_qs.last())()
+    chat_type = last_task_storage.chat_task
+
     chat_settings = await database_sync_to_async(BotSettings.objects.get)(
         bot_chats=f'https://t.me/{chat_type}')
-    chat = BotLabel(chat_settings.chat_label).name
+    chat_label = BotLabel(chat_settings.chat_label).name
+
     if callback.data == 'check_button':
-
-        if chat == "DEFAULT":
+        if chat_label == "DEFAULT":
             data = await checker_instance.run_default_chat(callback.message, user_id)
-
             posts_without_like = []
+
             for item in data:
                 link = item.get('link')
                 likes = item.get('likes')
@@ -296,6 +305,7 @@ async def check_task(callback: types.CallbackQuery):
                     posts_without_like.append(link)
 
                 tasks_qs = await database_sync_to_async(lambda: list(LinksQueue.objects.all().values()))()
+
                 for task in tasks_qs:
                     if task['vk_link'] == link and link not in posts_without_like:
                         task_instance = await database_sync_to_async(LinksQueue.objects.get)(id=task['id'])
@@ -313,17 +323,17 @@ async def check_task(callback: types.CallbackQuery):
                     await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
                         message_text=message)
                     await bot.edit_message_text(chat_id=callback.message.chat.id,
-                                            message_id=callback.message.message_id,
-                                            text=message,
-                                            disable_web_page_preview=True,
-                                            reply_markup=check_kb)
+                                                message_id=callback.message.message_id,
+                                                text=message,
+                                                disable_web_page_preview=True,
+                                                reply_markup=check_kb)
                 except ApiTelegramException:
                     message_ext = f"Вы не завершили предыдущее {message}"
                     await bot.edit_message_text(chat_id=callback.message.chat.id,
-                                            message_id=callback.message.message_id,
-                                            text=message_ext,
-                                            disable_web_page_preview=True,
-                                            reply_markup=check_kb)
+                                                message_id=callback.message.message_id,
+                                                text=message_ext,
+                                                disable_web_page_preview=True,
+                                                reply_markup=check_kb)
                     await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
                         message_text=message)
             else:
@@ -345,17 +355,12 @@ async def check_task(callback: types.CallbackQuery):
                                             )
                 await user_handler.unmute_user(callback, user_id)
 
-        if chat == "ADVANCED":
+        if chat_label == "ADVANCED":
             data = await checker_instance.run_advanced_chat(callback.message, user_id)
             subs_data = []
             comments_data = []
             posts_without_like = []
-
-            data_dict = {
-                'subs': subs_data,
-                'comments': comments_data,
-                'links': posts_without_like
-            }
+            data_dict = {'subs': subs_data, 'comments': comments_data, 'links': posts_without_like}
 
             for item in data:
                 link = item.get('link')
@@ -373,54 +378,53 @@ async def check_task(callback: types.CallbackQuery):
                     subs_data.append(link)
 
                 tasks_qs = await database_sync_to_async(lambda: list(LinksQueue.objects.all().values()))()
+
                 for task in tasks_qs:
                     link_present = any(link in sublist for sublist in data_dict.values())
 
-                    # if task['vk_link'] == link and link not in posts_without_like:
                     if task['vk_link'] == link and not link_present:
                         task_instance = await database_sync_to_async(LinksQueue.objects.get)(id=task['id'])
                         await database_sync_to_async(UserDoneLinks.objects.get_or_create)(
                             bot_user=user_id,
                             link=task_instance
                         )
+
             if data_dict:
                 link_without_likes = data_dict.pop('links')
                 out_comment = data_dict.pop('comments')
                 out_subs = data_dict.pop('subs')
 
+                link_message = ""
+                comment_message = ""
+                subs_message = ""
+
                 for link in link_without_likes:
-                    link_message = f"Не поставлены лайки: {link}\n"
+                    link_message += f"Не поставлены лайки: {link}\n"
                 for comment in out_comment:
-                    comment_message = f"Отсутсвтуют комментарии: {comment}\n"
+                    comment_message += f"Отсутсвтуют комментарии: {comment}\n"
                 for sub in out_subs:
-                    subs_message = f"Отсутствует подписка: {sub}"
+                    subs_message += f"Отсутствует подписка: {sub}"
 
                 global_message = f"Задание № {task_code}\n{link_message}{comment_message}{subs_message}"
-                print(1)
-            # if posts_without_like:
-            #     message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n" + "\n".join(
-            #         posts_without_like)
-            #     check_kb = keyboard_creator.create_check_keyboard()
-            #
-            #     try:
-            #         await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
-            #             message_text=message)
-            #         await bot.edit_message_text(chat_id=callback.message.chat.id,
-            #                                     message_id=callback.message.message_id,
-            #                                     text=message,
-            #                                     disable_web_page_preview=True,
-            #                                     reply_markup=check_kb)
-            #     except ApiTelegramException:
-            #         message_ext = f"Вы не завершили предыдущее {message}"
-            #         await bot.edit_message_text(chat_id=callback.message.chat.id,
-            #                                     message_id=callback.message.message_id,
-            #                                     text=message_ext,
-            #                                     disable_web_page_preview=True,
-            #                                     reply_markup=check_kb)
-            #         await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
-            #             message_text=message)
-            # elif subs_data:
-            #     pass
+
+                check_kb = keyboard_creator.create_check_keyboard()
+                try:
+                    await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
+                        message_text=global_message)
+                    await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                                message_id=callback.message.message_id,
+                                                text=global_message,
+                                                disable_web_page_preview=True,
+                                                reply_markup=check_kb)
+                except ApiTelegramException:
+                    message_ext = f"Вы не завершили предыдущее {global_message}"
+                    await bot.edit_message_text(chat_id=callback.message.chat.id,
+                                                message_id=callback.message.message_id,
+                                                text=message_ext,
+                                                disable_web_page_preview=True,
+                                                reply_markup=check_kb)
+                    await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
+                        message_text=message_ext)
             else:
                 message = 'Задание принято!'
                 links_qs = await database_sync_to_async(lambda: LinkStorage.objects.filter(
