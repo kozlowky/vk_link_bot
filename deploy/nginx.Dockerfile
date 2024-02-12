@@ -1,5 +1,8 @@
 FROM nginx:stable-alpine
 
-ENV DOLLAR $
+RUN rm /etc/nginx/conf.d/default.conf && \
+    mkdir -p /etc/nginx/conf.d
 
-COPY deploy/default.conf.template /etc/nginx/templates/default.conf.template
+COPY /deploy/nginx.conf /etc/nginx/conf.d/default.conf
+
+COPY ./core/static /app/static

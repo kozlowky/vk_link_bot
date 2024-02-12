@@ -85,12 +85,12 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': env.str('SQL_ENGINE'),
-        'NAME': env.str('DB_NAME'),
-        'USER': env.str('DB_USER'),
-        'PASSWORD': env.str('DB_PASSWORD'),
-        'HOST': 'db',
-        'PORT': 5432,
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': env.str('POSTGRES_DB', default='vk_bot'),
+        'USER': env.str('POSTGRES_USER', default='postgres'),
+        'PASSWORD': env.str('POSTGRES_PASSWORD', default='postgres'),
+        'HOST': env.str('POSTGRES_HOST', default='localhost'),
+        'PORT': env.int('POSTGRES_PORT', default=5432),
     }
 }
 
