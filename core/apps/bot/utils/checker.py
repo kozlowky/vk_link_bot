@@ -20,7 +20,7 @@ class VkChecker:
         if match_post:
             has_prefix, match = match_post.groups()
             owner_id_match = re.search(r'(\d+)_\d+', match)
-            owner_id = owner_id_match.group(1) if has_prefix else owner_id_match.group(1)
+            owner_id = "-" + owner_id_match.group(1) if has_prefix else owner_id_match.group(1)
             post_id_match = re.search(r'\d+_(\d+)', match)
             post_id = post_id_match.group(1)
             return owner_id, post_id
