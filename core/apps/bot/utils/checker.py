@@ -16,11 +16,11 @@ class VkChecker:
 
     @staticmethod
     async def get_owner_and_post_ids(link):
-        match_post = re.search(r'wall-(\d+_\d+)', link)
+        match_post = re.search(r'wall(-)?(\d+_\d+)', link)
         if match_post:
-            match = match_post.group(1)
+            has_prefix, match = match_post.groups()
             owner_id_match = re.search(r'(\d+)_\d+', match)
-            owner_id = "-" + owner_id_match.group(1)
+            owner_id = owner_id_match.group(1) if has_prefix else owner_id_match.group(1)
             post_id_match = re.search(r'\d+_(\d+)', match)
             post_id = post_id_match.group(1)
             return owner_id, post_id
