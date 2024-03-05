@@ -1,13 +1,13 @@
 from channels.db import database_sync_to_async
 
-from core.apps.bot.models import BotSettings, BotUser, LinkStorage, LinksQueue, UserDoneLinks, VIPCode, TaskStorage
+from core.apps.bot.models import Chat, BotUser, LinkStorage, LinksQueue, UserDoneLinks, VIPCode, TaskStorage
 
 
 class DatabaseManager:
     @staticmethod
     @database_sync_to_async
     def get_chat_settings(message_chat):
-        return BotSettings.objects.get(bot_chats=f'https://t.me/{message_chat}')
+        return Chat.objects.get(bot_chats=f'https://t.me/{message_chat}')
 
     @staticmethod
     @database_sync_to_async

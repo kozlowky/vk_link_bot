@@ -6,7 +6,7 @@ from channels.db import database_sync_to_async
 from vk_api import ApiError
 
 from core.apps.bot.constants.bot_label import BotLabel
-from core.apps.bot.models import BotSettings
+from core.apps.bot.models import Chat
 
 
 class VkChecker:
@@ -76,7 +76,7 @@ class VkChecker:
         pattern = r'из группы (\S+):'
         match = re.search(pattern, callback.text)
         chat_id = match.group(1)
-        chat_settings = await database_sync_to_async(BotSettings.objects.get)(
+        chat_settings = await database_sync_to_async(Chat.objects.get)(
             bot_chats=f'https://t.me/{chat_id}')
         chat_type = chat_settings.chat_label
         return chat_type

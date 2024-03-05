@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from core.apps.bot.constants.users_type import UserTypes
-from core.apps.bot.models import BotUser, VIPCode, LinkStorage, LinksQueue, BotSettings
+from core.apps.bot.models import BotUser, VIPCode, LinkStorage, LinksQueue, Chat
 
 
 class TGUserModelAdmin(admin.ModelAdmin):
@@ -44,13 +44,13 @@ class VIPCodeModelAdmin(admin.ModelAdmin):
     search_fields = ['id', 'vip_code']
 
 
-class BotSettingsAdmin(admin.ModelAdmin):
+class ChatAdmin(admin.ModelAdmin):
     list_display = ['bot_chats', 'chat_label']
     readonly_fields = ['chat_id']
 
 
 admin.site.register(BotUser, TGUserModelAdmin)
-admin.site.register(BotSettings, BotSettingsAdmin)
+admin.site.register(Chat, ChatAdmin)
 admin.site.register(LinkStorage, LinkStorageModelAdmin)
 admin.site.register(LinksQueue, LinksQueueModelAdmin)
 admin.site.register(VIPCode, VIPCodeModelAdmin)

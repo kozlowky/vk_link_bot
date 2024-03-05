@@ -15,7 +15,7 @@ class UserHandler:
         if user_status not in ['administrator', 'creator']:
             await self.bot.restrict_chat_member(chat_id, user_id, until_date=0)
 
-    async def unmute_user(self, callback, user_id):
+    async def unmute_user(self, user_id):
         chat_settings = await database_sync_to_async(BotSettings.objects.get)()
         chat_id = chat_settings.chat_id
         await self.bot.restrict_chat_member(chat_id, user_id.tg_id,

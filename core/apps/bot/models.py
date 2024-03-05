@@ -25,6 +25,7 @@ class BotUser(models.Model):
     vip_code = models.ForeignKey("VIPCode", related_name='bot_users', verbose_name=_('VIP Код'), null=True,
                                  blank=True, on_delete=models.SET_NULL)
     vip_end_date = models.DateField(blank=True, null=True, verbose_name=_('Дата окончания VIP кода'))
+    mute = models.BooleanField(_('Блокировка чата'), default=False)
 
     def __str__(self):
         return self.username or f"{self.first_name} {self.last_name}"
@@ -61,6 +62,8 @@ class LinkStorage(models.Model):
     vk_link = models.CharField(_('ВК Ссылка'), max_length=255)
     added_at = models.DateTimeField(_('Дата отправки'), auto_now_add=True)
     is_approved = models.BooleanField(_('Ссылка подтверждена'), default=False)
+    chat_type = models.CharField(_('Тип чата'), max_length=10)
+    comment = models.TextField(_("Comment"), blank=True, null=True)
 
     def __str__(self):
         return self.vk_link
@@ -76,6 +79,9 @@ class LinksQueue(models.Model):
     approved_at = models.DateTimeField(_('Дата подтверждения'), auto_now_add=True)
     queue_number = models.CharField(_('Номер в очереди'), max_length=10, unique=True)
     link_priority = models.BooleanField(_('Приоритет ссылки'), default=False)
+    send_count = models.IntegerField(_('Текущее количество отправок'), default=0)
+    total_count = models.IntegerField(_('Количество отправок ссылки'), default=0)
+    chat_type = models.CharField(_('Тип чата'), max_length=10)
 
     def save(self, *args, **kwargs):
         if not self.queue_number:
@@ -132,15 +138,23 @@ class TaskStorage(models.Model):
         return f"{self.code} - {self.added_at}"
 
 
-class BotSettings(models.Model):
+class Chat(models.Model):
     class Meta:
-        verbose_name_plural = 'Настройки Бота'
+        verbose_name = 'Чат'
+        verbose_name_plural = 'Чаты'
 
     chat_label = models.IntegerField(
         _('Тип Чата'), default=BotLabel.DEFAULT.value, choices=BOT_LABEL_CHOICES
     )
     bot_chats = models.CharField(_('Чат'), max_length=150, blank=True)
     chat_id = models.BigIntegerField(_('Чат ID'), unique=True, blank=True, null=True)
+    reply_link_count = models.IntegerField(_('Разрешена повторная отправка ссылки через: '), default=0)
+    link_count = models.IntegerField(_('Количество раздач ссылки'), default=0)
+    task_link_count = models.IntegerField(_('Количество ссылок в задании'), default=0)
 
     def __str__(self):
         return self.bot_chats
+
+
+class BotSettings(models.Model):
+    pass
