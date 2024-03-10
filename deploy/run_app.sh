@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export DJANGO_SETTINGS_MODULE=core.settings
+
 python core/manage.py collectstatic --noinput
 python core/manage.py migrate --noinput
 python core/manage.py runserver 0.0.0.0:8000 &
