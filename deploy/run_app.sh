@@ -1,17 +1,9 @@
 #!/bin/bash
 
-APPDIR=$(dirname $(pwd))
-echo $APPDIR
-
 export DJANGO_SETTINGS_MODULE=core.settings
-export PYTHONPATH="${PYTHONPATH}:$APPDIR"
+export PYTHONPATH="${PYTHONPATH}:/app"
 
 gunicorn -c "gunicorn.conf.py" backend.wsgi:application
-pwd
-ls -la
-cd core
-ls
-echo $APPDIR
 
 python manage.py collectstatic --noinput
 python manage.py migrate --noinput
