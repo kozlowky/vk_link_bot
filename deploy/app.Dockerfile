@@ -22,6 +22,6 @@ EXPOSE 8000
 #
 #ENV DJANGO_SETTINGS_MODULE=core.settings
 
-RUN chmod +x /app/run_app.sh
-CMD ["/app/run_app.sh"]
+RUN chmod +x /app/deploy/run_app.sh
+CMD ["/app/deploy/run_app.sh"]
 
