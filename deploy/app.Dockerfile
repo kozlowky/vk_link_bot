@@ -9,7 +9,7 @@ COPY deploy/requirements.txt /app/
 COPY deploy/gunicorn.conf.py /app/
 COPY deploy/run_app.sh /app/
 
-COPY . /core /app/
+COPY . /app
 
 RUN apt-get update && \
     apt-get install -y build-essential libpq-dev python3-dev && \
