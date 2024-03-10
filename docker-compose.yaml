@@ -7,7 +7,7 @@ services:
       dockerfile: deploy/app.Dockerfile
     restart: always
     volumes:
-      - static_volume:/app/static/
+      - static_volume:/app/core/static/
     env_file:
       - core/.env
     expose:
@@ -21,7 +21,7 @@ services:
       dockerfile: deploy/nginx.Dockerfile
     restart: always
     volumes:
-      - static_volume:/app/static/
+      - static_volume:/app/core/static/
     env_file:
       - core/.env
     expose:
