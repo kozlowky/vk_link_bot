@@ -3,7 +3,7 @@
 export DJANGO_SETTINGS_MODULE=core.settings
 export PYTHONPATH="${PYTHONPATH}:/app"
 
-gunicorn -c "gunicorn.conf.py" backend.wsgi:application
+gunicorn -c "core/gunicorn.conf.py" backend.wsgi:application
 
 python core/manage.py collectstatic --noinput
 python core/manage.py migrate --noinput
