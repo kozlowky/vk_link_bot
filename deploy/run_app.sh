@@ -13,8 +13,8 @@ cd core
 ls
 echo $APPDIR
 
-python ${APPDIR}core/manage.py collectstatic --noinput
-python ${APPDIR}core/manage.py migrate --noinput
-python ${APPDIR}core/manage.py runserver 0.0.0.0:8000 &
-python ${APPDIR}core/manage.py run_bot
+python manage.py collectstatic --noinput
+python manage.py migrate --noinput
+python manage.py runserver 0.0.0.0:8000 &
+python manage.py run_bot
 
