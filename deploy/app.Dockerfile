@@ -20,8 +20,6 @@ RUN pip install --upgrade pip && \
 
 EXPOSE 8000
 
-ENV DJANGO_SETTINGS_MODULE=core.settings
-
 RUN chmod +x /app/deploy/run_app.sh
 CMD ["/app/deploy/run_app.sh"]
 
