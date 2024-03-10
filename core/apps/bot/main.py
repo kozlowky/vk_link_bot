@@ -138,6 +138,18 @@ async def handle_menu(message):
         await get_status(message, user)
 
 
+@bot.message_handler(func=lambda message: True and message.chat.type == chat_types.PRIVATE_CHAT_TYPE,
+                     content_types=['text'])
+async def handle_text_message(message):
+    user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
+    current_state = await state_worker.get_user_state(user)
+
+    if current_state == StateTypes.VK_LINK:
+        await process_vk_link(message, user)
+    elif current_state == StateTypes.VIP_CODE:
+        await process_vip_code(message, user)
+
+
 async def remove_link_queue(message, data):
     link = await database_sync_to_async(LinksQueue.objects.get)(vk_link=data)
     await bot.reply_to(message,
