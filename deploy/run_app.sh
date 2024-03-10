@@ -8,6 +8,7 @@ export PYTHONPATH="${PYTHONPATH}:$APPDIR"
 
 gunicorn -c "gunicorn.conf.py" backend.wsgi:application
 pwd
+ls -la
 python ${APPDIR}core/manage.py collectstatic --noinput
 python ${APPDIR}core/manage.py migrate --noinput
 python ${APPDIR}core/manage.py runserver 0.0.0.0:8000 &
