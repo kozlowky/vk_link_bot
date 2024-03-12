@@ -38,6 +38,7 @@ user_handler = UserHandler(bot)
 db_manager = DatabaseManager()
 checker_instance = checker.VkChecker(vk, bot)
 
+keyboard = keyboard_creator.create_user_keyboard()
 
 @bot.message_handler(commands=['start'], func=lambda message: message.chat.type == chat_types.PRIVATE_CHAT_TYPE)
 async def send_welcome(message):
@@ -45,7 +46,6 @@ async def send_welcome(message):
     try:
         user = await database_sync_to_async(BotUser.objects.get)(tg_id=user_id)
         await state_worker.reset_user_state(user)
-        keyboard = keyboard_creator.create_user_keyboard()
         await bot.reply_to(message, text=message_text.auth_user, reply_markup=keyboard)
     except BotUser.DoesNotExist:
         first_name = message.from_user.first_name
@@ -115,10 +115,9 @@ async def remove_link(message):
 async def vip_choices(message):
     user = await database_sync_to_async(BotUser.objects.get)(tg_id=message.from_user.id)
     if message.text == "Есть, ввести":
-        await bot.send_message(message.chat.id, text=message_text.vip_code_enter)
+        await bot.send_message(message.chat.id, text=message_text.vip_code_enter, reply_markup=types.ReplyKeyboardRemove())
         await state_worker.set_user_state(user, state=StateTypes.VIP_CODE)
     else:
-        keyboard = keyboard_creator.create_user_keyboard()
         await bot.reply_to(message, text=message_text.link_enter, reply_markup=keyboard)
         await state_worker.set_user_state(user, state=StateTypes.VK_LINK)
 
@@ -248,7 +247,7 @@ async def process_vip_code(message, user):
             await bot.send_message(message.chat.id,
                                    f"✅Есть контакт! Срок действия кода - до {vi_code_end_date}\n"
                                    f"Теперь ваши ссылки будут сразу попадать в очередь к другим "
-                                   f"участникам. Вам не нужно самостоятельно выполнять задания.")
+                                   f"участникам. Вам не нужно самостоятельно выполнять задания.", reply_markup=keyboard)
 
         await state_worker.reset_user_state(user)
 
@@ -293,46 +292,49 @@ async def chat_member_handler(message):
                                     await bot.send_message(user_id,
                                                            f"Ваша ссылка добавлена в очередь под № {new_link_queue.queue_number}")
                                 else:
-                                    await check_recent_objects(message, chat_user, chat)
-                                    code = str(uuid.uuid4()).split('-')[0]
-                                    await db_manager.create_link(bot_user=chat_user, vk_link=link, code=code,
-                                                                 chat_type=chat_type, comment=comment)
-                                    check_kb = keyboard_creator.create_check_keyboard()
-                                    tasks_qs = await database_sync_to_async(
-                                        lambda: list(
-                                            LinksQueue.objects.exclude(bot_user_id=chat_user.id)
-                                            .filter(send_count__lt=count, chat_type=chat_type)
-                                            .values()
-                                        )
-                                    )()
-                                    done_qs = await database_sync_to_async(UserDoneLinks.objects.filter)(
-                                        bot_user=chat_user)
-                                    done_ids = set(await database_sync_to_async(lambda: {q.link_id for q in done_qs})())
-                                    user_tasks = [task['vk_link'] for task in tasks_qs if task['id'] not in done_ids]
+                                    allow_links = await check_recent_objects(message, chat_user, chat)
+                                    if allow_links:
+                                        code = str(uuid.uuid4()).split('-')[0]
+                                        await db_manager.create_link(bot_user=chat_user, vk_link=link, code=code,
+                                                                     chat_type=chat_type, comment=comment)
+                                        check_kb = keyboard_creator.create_check_keyboard()
+                                        tasks_qs = await database_sync_to_async(
+                                            lambda: list(
+                                                LinksQueue.objects.exclude(bot_user_id=chat_user.id)
+                                                .filter(send_count__lt=count, chat_type=chat_type)
+                                                .values()
+                                            )
+                                        )()
+                                        done_qs = await database_sync_to_async(UserDoneLinks.objects.filter)(
+                                            bot_user=chat_user)
+                                        done_ids = set(await database_sync_to_async(lambda: {q.link_id for q in done_qs})())
+                                        user_tasks = [task['vk_link'] for task in tasks_qs if task['id'] not in done_ids]
 
-                                    if user_tasks:
-                                        await user_handler.mute_user(message)
-                                        task_message_text = f"Ваше задание № {code}:\n" + '\n'.join(user_tasks)
-                                        await db_manager.create_task_storage(bot_user=chat_user,
-                                                                             message_text=task_message_text,
-                                                                             code=code,
-                                                                             chat_task=message_chat)
-                                        await bot.send_message(user_id, task_message_text,
-                                                               disable_web_page_preview=True,
-                                                               reply_markup=check_kb)
-                                        for task in tasks_qs:
-                                            task_queue = await database_sync_to_async(LinksQueue.objects.get)(
-                                                id=task.get("id"))
-                                            task_queue.send_count += 1
-                                            await database_sync_to_async(task_queue.save)()
+                                        if user_tasks:
+                                            await user_handler.mute_user(message)
+                                            task_message_text = f"Ваше задание № {code}:\n" + '\n'.join(user_tasks)
+                                            await db_manager.create_task_storage(bot_user=chat_user,
+                                                                                 message_text=task_message_text,
+                                                                                 code=code,
+                                                                                 chat_task=message_chat)
+                                            await bot.send_message(user_id, task_message_text,
+                                                                   disable_web_page_preview=True,
+                                                                   reply_markup=check_kb)
+                                            for task in tasks_qs:
+                                                task_queue = await database_sync_to_async(LinksQueue.objects.get)(
+                                                    id=task.get("id"))
+                                                task_queue.send_count += 1
+                                                await database_sync_to_async(task_queue.save)()
+                                        else:
+                                            new_link_queue = await db_manager.create_link_queue(bot_user=chat_user,
+                                                                                                vk_link=link,
+                                                                                                total_count=count,
+                                                                                                chat_type=chat_type,
+                                                                                                )
+                                            await bot.send_message(user_id,
+                                                                   f"Сейчас нет заданий\n\nВаша ссылка добавлена в очередь под № {new_link_queue.queue_number}")
                                     else:
-                                        new_link_queue = await db_manager.create_link_queue(bot_user=chat_user,
-                                                                                            vk_link=link,
-                                                                                            total_count=count,
-                                                                                            chat_type=chat_type,
-                                                                                            )
-                                        await bot.send_message(user_id,
-                                                               f"Сейчас нет заданий\n\nВаша ссылка добавлена в очередь под № {new_link_queue.queue_number}")
+                                        return
                             else:
                                 await bot.send_message(chat_id, "Нельзя отправить больше одной ссылки за раз.")
                         else:
@@ -554,12 +556,14 @@ async def check_recent_objects(message, user, chat):
 
     user_links_qs = await database_sync_to_async(LinkStorage.objects.filter)(bot_user=user.id)
     last_user_link = await database_sync_to_async(lambda: user_links_qs.last())()
-
+    if not last_user_link:
+        return
     link_qs = LinkStorage.objects.all()
     last_link_qs = await database_sync_to_async(lambda: link_qs.last())()
 
     difference = last_link_qs.id - last_user_link.id
     links_left = allow_link_count - difference
     if difference < allow_link_count:
-        await bot.reply_to(message, f"😢Не могу принять ссылку. От вашей предыдущей должно пройти 20 чужих ссылок. "
+        await bot.reply_to(message, f"😢Не могу принять ссылку. От вашей предыдущей должно пройти {allow_link_count} чужих ссылок. "
                                     f"Осталось: {links_left}")
+        return False
