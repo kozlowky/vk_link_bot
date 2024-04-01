@@ -4,6 +4,7 @@ from channels.db import database_sync_to_async
 from telebot import types
 
 from core.apps.bot.constants.bot_label import BotLabel
+from core.apps.bot.constants.users_type import UserTypes
 from core.apps.bot.models import Chat, LinkStorage, TaskStorage
 
 
@@ -57,19 +58,25 @@ async def check_message(message: types.Message) -> dict:
 async def check_recent_objects(user, chat):
     allow_link_count = chat.reply_link_count
 
-    all_qs_count = await database_sync_to_async(
-        lambda: LinkStorage.objects.filter(chat_type=BotLabel(chat.chat_label).name, bot_user=user.id).count()
+    exists = await database_sync_to_async(
+        lambda: LinkStorage.objects.filter(chat_type=BotLabel(chat.chat_label).name, bot_user=user.id).exists()
     )()
 
-    if all_qs_count != 0:
+    if exists:
 
-        links_storage = await database_sync_to_async(
+        links_allow_qs = await database_sync_to_async(
             lambda: list(LinkStorage.objects.filter(chat_type=BotLabel(chat.chat_label).name)
-                         .order_by('-added_at')[:allow_link_count])
+                         .order_by("-added_at")[:allow_link_count])
         )()
 
-        remaining_links_count = sum(1 for link in links_storage if link.bot_user_id == user.id)
-        return remaining_links_count
+        links_storage = [link for link in links_allow_qs if link.bot_user_id != user.id]
+        links_length = len(links_storage)
+        total_links = allow_link_count - links_length
+        if total_links > allow_link_count:
+            total_links = 0
+            return total_links
+        else:
+            return total_links
 
     else:
         total_links = 0
@@ -77,14 +84,17 @@ async def check_recent_objects(user, chat):
 
 
 async def check_current_task(user, chat):
-    chat_name = chat.bot_chats.split('/')[-1]
+    if user.status == UserTypes.VIP:
+        pass
+    else:
+        chat_name = chat.bot_chats.split('/')[-1]
 
-    ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(
-        bot_user=user.id,
-        chat_task=chat_name,
-        task_completed=False
-    )
-    ts_last = await database_sync_to_async(ts_qs.last)()
+        ts_qs = await database_sync_to_async(TaskStorage.objects.filter)(
+            bot_user=user.id,
+            chat_task=chat_name,
+            task_completed=False
+        )
+        ts_last = await database_sync_to_async(ts_qs.last)()
 
-    if ts_last:
-        return ts_last
+        if ts_last:
+            return ts_last
