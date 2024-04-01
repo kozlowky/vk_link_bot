@@ -180,7 +180,8 @@ async def handle_text_message(message):
 
 
 async def remove_link_queue(message, data):
-    link = await database_sync_to_async(LinksQueue.objects.get)(vk_link=data)
+    links_qs = await database_sync_to_async(LinksQueue.objects.filter)(vk_link=data)
+    link = await database_sync_to_async(lambda: links_qs.last())()
     await bot.reply_to(message,
                        text=f"Ссылка {link.vk_link} удалена из очереди!",
                        disable_web_page_preview=True)
@@ -298,7 +299,7 @@ async def process_vip_code(message, user):
         )
 
 
-async def create_link_for_vip_or_admin(chat_user, link_data, count, chat_type, user_id) -> None:
+async def create_link_for_admin(chat_user, link_data, count, chat_type, user_id) -> None:
     new_link_queue = await db_manager.create_link_queue(
         bot_user=chat_user,
         vk_link=link_data.get("link"),
@@ -370,8 +371,8 @@ async def chat_member_handler(message):
         await bot.send_message(chat_id=message.from_user.id, text=link_data.get("error"))
         return
 
-    if chat_user.status == UserTypes.VIP or chat_user.is_admin:
-        await create_link_for_vip_or_admin(chat_user, link_data, count, chat_type, user_id)
+    if chat_user.is_admin:
+        await create_link_for_admin(chat_user, link_data, count, chat_type, user_id)
     else:
         current_task = await check_current_task(chat_user, chat)
         if current_task:
@@ -382,14 +383,14 @@ async def chat_member_handler(message):
                                    reply_markup=check_kb)
         else:
             allow_links = await check_recent_objects(chat_user, chat)
-            if allow_links == 0:
-                await create_task_for_member(message, user_id, chat_user, link_data, count, chat_type)
-            else:
+            if allow_links != 0:
                 await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
                 await bot.send_message(chat_id=message.from_user.id,
                                        text=f"😢Не могу принять ссылку: {message.text}. От вашей предыдущей должно пройти {chat.reply_link_count} чужих ссылок. "
                                             f"Осталось: {allow_links}",
                                        disable_web_page_preview=True)
+            else:
+                await create_task_for_member(message, user_id, chat_user, link_data, count, chat_type)
 
 
 @bot.callback_query_handler(func=lambda callback: callback.data == 'check_button')
