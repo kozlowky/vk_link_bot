@@ -24,7 +24,7 @@ from core.apps.bot.kb import KeyboardCreator, user_kb_list, start_menu_kb
 from core.apps.bot.models import BotUser, LinkStorage, LinksQueue, UserDoneLinks, Chat, VIPCode, TaskStorage
 from core.apps.bot.utils import state_worker, checker
 from core.apps.bot.utils.db_handler import DatabaseManager
-from core.apps.bot.utils.helpers import check_message, get_chat, check_recent_objects, check_current_task
+from core.apps.bot.utils.helpers import check_message, get_chat, check_recent_objects, check_current_task, accept_send_task
 from core.apps.bot.utils.user_mute import UserHandler
 
 bot = AsyncTeleBot(settings.TOKEN_BOT, parse_mode='HTML')
@@ -311,6 +311,7 @@ async def create_link_for_admin(chat_user, link_data, count, chat_type, user_id)
         text=f"Ваша ссылка добавлена в очередь под № {new_link_queue.queue_number}"
     )
 
+
 async def create_task_for_member(message, user_id, chat_user, link_data, count, chat_type):
     code = str(uuid.uuid4()).split('-')[0]
     await db_manager.create_link(bot_user=chat_user, vk_link=link_data.get("link"), code=code,
@@ -319,7 +320,7 @@ async def create_task_for_member(message, user_id, chat_user, link_data, count, 
         lambda: list(
             LinksQueue.objects.exclude(bot_user_id=chat_user.id)
             .filter(send_count__lt=count, chat_type=chat_type)
-            .values()
+            .values().distinct()
         )
     )()
     done_qs = await database_sync_to_async(UserDoneLinks.objects.filter)(
@@ -382,7 +383,7 @@ async def chat_member_handler(message):
                                    disable_web_page_preview=True,
                                    reply_markup=check_kb)
         else:
-            allow_links = await check_recent_objects(chat_user, chat)
+            allow_links = await check_recent_objects(chat_user, chat, link_data)
             if allow_links != 0:
                 await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
                 await bot.send_message(chat_id=message.from_user.id,
@@ -450,17 +451,7 @@ async def check_task(callback: types.CallbackQuery):
                     await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
                         message_text=message)
             else:
-                message = 'Задание принято!'
-                links_qs = await database_sync_to_async(lambda: LinkStorage.objects.filter(
-                    bot_user=user_id).last())()
-                vk_link = links_qs.vk_link
-                links_qs.is_approved = True
-                accepted_task = await database_sync_to_async(
-                    lambda: TaskStorage.objects.filter(bot_user=user_id, task_completed=False).last())()
-                accepted_task.task_completed = True
-                await database_sync_to_async(links_qs.save)()
-                await database_sync_to_async(accepted_task.save)()
-                await db_manager.create_link_queue(bot_user=user_id, vk_link=vk_link)
+                message = await accept_send_task(user_id)
                 await bot.edit_message_text(chat_id=callback.message.chat.id,
                                             message_id=callback.message.message_id,
                                             text=message,
@@ -472,13 +463,13 @@ async def check_task(callback: types.CallbackQuery):
             subs_data = []
             comments_data = []
             posts_without_like = []
-            data_dict = {'subs': subs_data, 'comments': comments_data, 'links': posts_without_like}
+            data_dict = {'subs': subs_data, 'comments': comments_data, 'likes': posts_without_like}
 
             for item in data:
                 link = item.get('link')
                 likes = item.get('likes')
                 comments = item.get('comment')
-                subs = item.get('subs')
+                subs = item.get('sub')
 
                 if not likes:
                     posts_without_like.append(link)
@@ -501,23 +492,28 @@ async def check_task(callback: types.CallbackQuery):
                             link=task_instance
                         )
 
-            if data_dict:
-                link_without_likes = data_dict.pop('links')
-                out_comment = data_dict.pop('comments')
-                out_subs = data_dict.pop('subs')
+            if any(data_dict.values()):
+                unique_link_without_likes = set(data_dict.pop('likes'))
+                unique_out_comment = set(data_dict.pop('comments'))
+                unique_out_subs = set(data_dict.pop('subs'))
 
-                link_message = ""
-                comment_message = ""
-                subs_message = ""
+                link_without_likes = list(unique_link_without_likes)
+                out_comment = list(unique_out_comment)
+                out_subs = list(unique_out_subs)
 
-                for link in link_without_likes:
-                    link_message += f"Не поставлены лайки: {link}\n"
-                for comment in out_comment:
-                    comment_message += f"Отсутсвтуют комментарии: {comment}\n"
-                for sub in out_subs:
-                    subs_message += f"Отсутствует подписка: {sub}"
+                global_message = (f"Задание № {task_code}\n")
 
-                global_message = f"Задание № {task_code}\n{link_message}{comment_message}{subs_message}"
+                if link_without_likes:
+                    link_message = "\n".join(link_without_likes)
+                    global_message += f"Не поставлены лайки:\n{link_message}\n"
+
+                if out_comment:
+                    comment_message = "\n".join(out_comment)
+                    global_message += f"Отсутствуют комментарии:\n{comment_message}\n"
+
+                if out_subs:
+                    subs_message = "\n".join(out_subs)
+                    global_message += f"Отсутствует подписка:\n{subs_message}\n"
 
                 check_kb = keyboard_creator.create_check_keyboard()
                 try:
@@ -538,17 +534,7 @@ async def check_task(callback: types.CallbackQuery):
                     await database_sync_to_async(TaskStorage.objects.filter(code=task_code).update)(
                         message_text=message_ext)
             else:
-                message = 'Задание принято!'
-                links_qs = await database_sync_to_async(lambda: LinkStorage.objects.filter(
-                    bot_user=user_id).last())()
-                vk_link = links_qs.vk_link
-                links_qs.is_approved = True
-                accepted_task = await database_sync_to_async(
-                    lambda: TaskStorage.objects.filter(bot_user=user_id, task_completed=False).last())()
-                accepted_task.task_completed = True
-                await database_sync_to_async(links_qs.save)()
-                await database_sync_to_async(accepted_task.save)()
-                await db_manager.create_link_queue(bot_user=user_id, vk_link=vk_link)
+                message = await accept_send_task(user_id)
                 await bot.edit_message_text(chat_id=callback.message.chat.id,
                                             message_id=callback.message.message_id,
                                             text=message,

@@ -127,7 +127,7 @@ class VkChecker:
             data = {
                 'link': link,
                 'likes': check_likes,
-                'commnet': get_comment,
+                'comment': get_comment,
                 'sub': get_subs,
             }
             result.append(data)

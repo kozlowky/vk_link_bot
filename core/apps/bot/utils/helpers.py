@@ -1,11 +1,12 @@
 import re
+import uuid
 
 from channels.db import database_sync_to_async
 from telebot import types
 
 from core.apps.bot.constants.bot_label import BotLabel
 from core.apps.bot.constants.users_type import UserTypes
-from core.apps.bot.models import Chat, LinkStorage, TaskStorage
+from core.apps.bot.models import Chat, LinkStorage, TaskStorage, LinksQueue
 
 
 async def get_chat(message: types.Message) -> Chat:
@@ -55,7 +56,7 @@ async def check_message(message: types.Message) -> dict:
     return result
 
 
-async def check_recent_objects(user, chat):
+async def check_recent_objects(user, chat, link_data):
     allow_link_count = chat.reply_link_count
 
     exists = await database_sync_to_async(
@@ -66,14 +67,13 @@ async def check_recent_objects(user, chat):
 
         links_allow_qs = await database_sync_to_async(
             lambda: list(LinkStorage.objects.filter(chat_type=BotLabel(chat.chat_label).name)
-                         .order_by("-added_at")[:allow_link_count])
+                         .order_by("-id")[:allow_link_count])
         )()
 
         links_storage = [link for link in links_allow_qs if link.bot_user_id != user.id]
         links_length = len(links_storage)
         total_links = allow_link_count - links_length
-        if total_links > allow_link_count:
-            total_links = 0
+        if total_links == 0:
             return total_links
         else:
             return total_links
@@ -98,3 +98,19 @@ async def check_current_task(user, chat):
 
         if ts_last:
             return ts_last
+
+
+async def accept_send_task(user_id):
+    message = 'Задание принято!'
+    links_qs = await database_sync_to_async(lambda: LinkStorage.objects.filter(
+        bot_user=user_id).last())()
+    vk_link = links_qs.vk_link
+    links_qs.is_approved = True
+    accepted_task = await database_sync_to_async(
+        lambda: TaskStorage.objects.filter(bot_user=user_id, task_completed=False).last())()
+    accepted_task.task_completed = True
+    await database_sync_to_async(links_qs.save)()
+    await database_sync_to_async(accepted_task.save)()
+    await database_sync_to_async(LinksQueue.objects.create)(bot_user=user_id, vk_link=vk_link)
+
+    return message
