@@ -5,7 +5,6 @@ import requests
 from channels.db import database_sync_to_async
 from vk_api import ApiError
 
-from core.apps.bot.constants.bot_label import BotLabel
 from core.apps.bot.models import Chat
 
 
@@ -115,7 +114,6 @@ class VkChecker:
 
     async def run_advanced_chat(self, callback, user_id):
         vk_id = user_id.vk_id
-        # chat_type = await self.get_chat_type(callback)
 
         links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
         result = []

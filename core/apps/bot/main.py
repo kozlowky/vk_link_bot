@@ -299,13 +299,21 @@ async def process_vip_code(message, user):
         )
 
 
-async def create_link_for_admin(chat_user, link_data, count, chat_type, user_id) -> None:
-    new_link_queue = await db_manager.create_link_queue(
-        bot_user=chat_user,
-        vk_link=link_data.get("link"),
-        total_count=count,
-        chat_type=chat_type,
-    )
+async def create_link_for_previous(chat_user, link_data, count, chat_type, user_id) -> None:
+    new_link_queue = await db_manager.create_link_queue(bot_user=chat_user,
+                                                        vk_link=link_data.get("link"),
+                                                        total_count=count,
+                                                        chat_type=chat_type,
+                                                        )
+
+    if chat_user.status == UserTypes.VIP:
+        await db_manager.create_link(bot_user=chat_user,
+                                     vk_link=link_data.get("link"),
+                                     comment=link_data.get("comment"),
+                                     code="VIP",
+                                     chat_type=chat_type
+                                     )
+
     await bot.send_message(
         user_id,
         text=f"Ваша ссылка добавлена в очередь под № {new_link_queue.queue_number}"
@@ -314,8 +322,12 @@ async def create_link_for_admin(chat_user, link_data, count, chat_type, user_id)
 
 async def create_task_for_member(message, user_id, chat_user, link_data, count, chat_type):
     code = str(uuid.uuid4()).split('-')[0]
-    await db_manager.create_link(bot_user=chat_user, vk_link=link_data.get("link"), code=code,
-                                 chat_type=chat_type, comment=link_data.get("comment"))
+    await db_manager.create_link(bot_user=chat_user,
+                                 vk_link=link_data.get("link"),
+                                 comment=link_data.get("comment"),
+                                 code=code,
+                                 chat_type=chat_type
+                                 )
     tasks_qs = await database_sync_to_async(
         lambda: list(
             LinksQueue.objects.exclude(bot_user_id=chat_user.id)
@@ -373,7 +385,7 @@ async def chat_member_handler(message):
         return
 
     if chat_user.is_admin:
-        await create_link_for_admin(chat_user, link_data, count, chat_type, user_id)
+        await create_link_for_previous(chat_user, link_data, count, chat_type, user_id)
     else:
         current_task = await check_current_task(chat_user, chat)
         if current_task:
@@ -390,6 +402,10 @@ async def chat_member_handler(message):
                                        text=f"😢Не могу принять ссылку: {message.text}. От вашей предыдущей должно пройти {chat.reply_link_count} чужих ссылок. "
                                             f"Осталось: {allow_links}",
                                        disable_web_page_preview=True)
+
+            elif chat_user.status == UserTypes.VIP:
+                await create_link_for_previous(chat_user, link_data, count, chat_type, user_id)
+
             else:
                 await create_task_for_member(message, user_id, chat_user, link_data, count, chat_type)
 
@@ -407,6 +423,17 @@ async def check_task(callback: types.CallbackQuery):
     chat_label = BotLabel(chat_settings.chat_label).name
 
     if callback.data == 'check_button':
+
+        links_in_task = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.message.text)
+
+        for link_in_task in links_in_task:
+            link_queue_value = await database_sync_to_async(LinksQueue.objects.filter)(vk_link=link_in_task)
+
+            if not link_queue_value:
+                callback.message.text = callback.message.text.replace(link_in_task, '')
+
+
+
         if chat_label == "DEFAULT":
             data = await checker_instance.run_default_chat(callback.message, user_id)
             posts_without_like = []
