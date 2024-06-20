@@ -7,9 +7,9 @@ services:
       dockerfile: deploy/app.Dockerfile
     restart: always
     volumes:
-      - static_volume:/app/core/static/
+      - static_volume:/app/src/static/
     env_file:
-      - core/.env
+      - ./src/.env
     expose:
       - "8000"
     depends_on:
@@ -21,9 +21,9 @@ services:
       dockerfile: deploy/nginx.Dockerfile
     restart: always
     volumes:
-      - static_volume:/app/core/static/
+      - static_volume:/app/src/static/
     env_file:
-      - core/.env
+      - ./src/.env
     expose:
       - "80"
     ports:
@@ -36,7 +36,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
-      - core/.env
+      - ./src/.env
     ports:
       - "5432:5432"
 

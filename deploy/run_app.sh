@@ -1,12 +1,12 @@
 #!/bin/bash
 
-export DJANGO_SETTINGS_MODULE=core.settings
+export DJANGO_SETTINGS_MODULE=src.settings
 export PYTHONPATH="${PYTHONPATH}:/app"
 
-python core/manage.py collectstatic --noinput
-python core/manage.py migrate --noinput
-python core/manage.py runserver 0.0.0.0:8000 &
-python core/manage.py run_bot
+python src/manage.py collectstatic --noinput
+python src/manage.py migrate --noinput
+python src/manage.py runserver 0.0.0.0:8000 &
+python src/manage.py run_bot
 
-gunicorn -c "core/gunicorn.conf.py" core.wsgi:application
+gunicorn -c "core/gunicorn.conf.py" src.wsgi:application
 
