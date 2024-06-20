@@ -35,15 +35,3 @@ cp -rf .env_prod .env
 ```bash
 pip install -r requirements.txt
 ```
-
-## Ошибка - ModuleNotFoundError: No module named 'core'
-```bash
-export DJANGO_SETTINGS_MODULE=core.settings
-```
-```bash
-pwd
-```
-Скопировать путь до директории
-```bash
-export PYTHONPATH="${PYTHONPATH}:/путь из pwd"
-```
