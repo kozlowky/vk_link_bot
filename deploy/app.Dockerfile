@@ -42,5 +42,5 @@ RUN pip install -r requirements.txt
 COPY ./$SRC_DIR $PROJECT_ROOT
 
 RUN chmod +x $PROJECT_ROOT/run_django.sh
-CMD ["/project/run_django.sh"]
+CMD ["/project/run_app.sh"]
 
