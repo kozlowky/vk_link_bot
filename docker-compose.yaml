@@ -69,7 +69,7 @@ services:
     expose:
       - "6379"
 
-#volumes:
-#  static_volume:
+volumes:
+  static_volume:
 #  postgres_data:
 
