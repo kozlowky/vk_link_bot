@@ -1,5 +1,9 @@
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, \
-    InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import (
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 
 from core.bot.constants import buttons
 

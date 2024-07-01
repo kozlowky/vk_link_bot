@@ -1,19 +1,19 @@
 import logging
 import telebot
-import vk_api
 
 from django.conf import settings
 
-from bot.constants import buttons
-from bot.handlers.handlers_manager import (
+from core.bot.constants import buttons
+
+from core.bot.handlers.start import start
+from core.bot.handlers.handlers_manager import (
     admin_commands,
     check,
 )
-from bot.handlers.menu import menu
-from bot.handlers.process_answers import process_answers
-from bot.handlers.start import start
+from core.bot.handlers.menu import menu
+from core.bot.handlers.process_answers import process_answers
 
-from bot.utils.user_mute import UserHandler
+from core.bot.utils.user_mute import UserHandler
 
 bot = telebot.TeleBot(
     settings.TOKEN_BOT,
@@ -23,7 +23,7 @@ bot = telebot.TeleBot(
 telebot.logger.setLevel(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
-user_handler = UserHandler(bot)
+# user_handler = UserHandler(bot)
 
 MESSAGE_HANDLERS_MAP = {
     start: {

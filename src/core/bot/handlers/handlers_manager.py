@@ -5,7 +5,11 @@ from bot.handlers.check_task import TaskHandler
 
 from bot.constants import message_text
 from bot.database.managers import user_db_manager
-from bot.utils.helpers import get_last_task, process_accept_manually, remove_link_queue
+from bot.utils.helpers import (
+    get_last_task,
+    process_accept_manually,
+    remove_link_queue
+)
 
 
 def check(callback: types.CallbackQuery, bot: telebot.TeleBot) -> None:

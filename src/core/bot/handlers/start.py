@@ -1,13 +1,15 @@
 from telebot import types
 
-from bot.constants import message_text
-from bot.database.managers import user_db_manager
+from core.bot.handlers.decorator import ErrorHandler
+from core.bot.constants import message_text
+from core.bot.database.managers import user_db_manager
 from core.bot.kb import KeyboardCreator
 
 keyboard_creator = KeyboardCreator()
 start_keyboard = keyboard_creator.create_start_keyboard()
 
 
+@ErrorHandler.create()
 def start(message: types.Message, bot):
     user_id = message.from_user.id
     user = user_db_manager.get(user_id)

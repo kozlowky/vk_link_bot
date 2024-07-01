@@ -30,5 +30,5 @@ class UserDBManager:
 
         user = BotUser.objects.filter(
             **kwargs
-        ).exists()
+        )
         return user

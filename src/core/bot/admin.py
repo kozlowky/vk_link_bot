@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from core.bot.models import BotUser, VIPCode, LinksQueue, Chat, TaskStorage, MessageText, BotSettings
+from core.bot.models import (
+    BotUser,
+    VIPCode,
+    LinksQueue,
+    Chat,
+    TaskStorage,
+    MessageText,
+    BotSettings
+)
 
 
 class TGUserModelAdmin(admin.ModelAdmin):
@@ -38,7 +46,6 @@ class TaskStorageModelAdmin(admin.ModelAdmin):
     readonly_fields = ['bot_user', 'order_number', 'chat_type', 'link', 'links']
 
 
-
 class LinksQueueModelAdmin(admin.ModelAdmin):
     exclude = ['link_priority']
     list_display = [
@@ -74,7 +81,7 @@ class ChatAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {
-            'fields': ('chat_label', 'bot_chats', 'chat_id')
+            'fields': ('chat_label', 'bot_chats')
         }),
         ('Настройки', {
             'fields': ('reply_link_count', 'link_count', 'task_link_count')

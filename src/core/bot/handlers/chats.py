@@ -1,16 +1,12 @@
-import telebot
-from telebot.types import Message
-
-from bot.constants.message_text import (
+from core.bot.models import MessageText
+from core.bot.constants.message_text import (
     LINK_ADDED_FOR_NUMBER,
     TASK_IS_NOT_COMPLETE,
-    LINK_COUNT_ERROR,
     NO_TASKS_NOW, USER_TASK_NUMBER
 )
-from bot.constants.users_type import UserTypes
-from bot.database.managers import link_db_manager
-from bot.kb import KeyboardCreator
-from bot.utils.helpers import (
+from core.bot.constants.users_type import UserTypes
+from core.bot.database.managers import link_db_manager
+from core.bot.utils.helpers import (
     check_message,
     create_link_for_preference,
     check_current_task,
@@ -20,135 +16,79 @@ from bot.utils.helpers import (
 
 
 class ChatMemberHandler:
-    def __init__(self, message: telebot.types.Message, bot: telebot.TeleBot, chat, user):
-        """ Инициализация обработчика сообщений в группе. """
+    def __init__(self, chat, user):
+        """ Инициализация обработчика сообщений в чате. """
 
-        self.bot = bot
-        self.keyboard = KeyboardCreator().create_check_keyboard()
-        self.link_data = check_message(message, chat)
         self.user = user
         self.chat = chat
+        self.message_text_qs = MessageText.objects.filter(
+            key__in=[
+                "LINK_ADDED_FOR_NUMBER",
+                "TASK_IS_NOT_COMPLETE",
+                "USER_TASK_NUMBER",
+                "NO_TASKS_NOW"
+            ]
+        )
 
-    def handle_message(self, message: telebot.types.Message) -> None:
-        """ Основной метод для обработки сообщений в группе. """
+    def handle_message(self, message):
+        """ Метод обработки сообщений в группе. """
 
-        if self._handle_link_errors(message, self.link_data):
-            return
-
-        if self._handle_admin_link(message, self.user, self.link_data):
-            return
-
-        if self._handle_current_task(message, self.user, self.chat):
-            return
-
-        if self._handle_recent_links(message, self.user, self.chat):
-            return
-
-        self._handle_vip_link(message, self.user, self.link_data)
-
-        link = link_db_manager.create(obj=self.user, **self.link_data)
-        self._assign_task_to_member(message, self.user, self.chat, link)
-
-    def _handle_link_errors(self, message: Message, link_data: dict) -> bool:
-        """ Обработка ошибок при проверке ссылки в сообщении. """
+        link_data = check_message(message, self.chat)
 
         if link_data.get('error'):
-            self.bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-            self.bot.send_message(chat_id=message.from_user.id, text=link_data.pop('error'))
-            return True
-        return False
+            return {"result": link_data["error"]}
 
-    def _handle_admin_link(self, message: Message, user, link_data: dict) -> bool:
-        """ Обработка ссылок для администраторов. """
-
-        if user.is_admin:
-            link = create_link_for_preference(user, link_data)
-            message_text = LINK_ADDED_FOR_NUMBER.format(
+        if self.user.is_admin or self.user.status == UserTypes.VIP:
+            link = create_link_for_preference(self.user, link_data)
+            link_add_number = self.message_text_qs.get(key="LINK_ADDED_FOR_NUMBER").message
+            message_text = link_add_number.format(
                 link=link,
                 number=link.queue_number
             )
-            self.bot.send_message(
-                chat_id=message.from_user.id,
-                text=message_text,
-                disable_web_page_preview=True
-            )
-            return True
-        return False
+            return {"result": message_text}
 
-    def _handle_current_task(self, message: Message, user, chat) -> bool:
-        """ Обработка текущего незавершенного задания пользователя. """
-
-        current_task = check_current_task(user, chat)
+        current_task = check_current_task(self.user, self.chat)
         if current_task:
-            self.bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
             links = "\n".join([str(link) for link in current_task.links.all()])
             message_text = TASK_IS_NOT_COMPLETE.format(
-                current_task=current_task.message_text,
+                current_task=current_task.order_number,
                 links=links
             )
-            self.bot.send_message(
-                chat_id=message.from_user.id,
-                text=message_text,
-                disable_web_page_preview=True,
-                reply_markup=KeyboardCreator.create_check_keyboard()
-            )
-            return True
-        return False
-
-    def _handle_recent_links(self, message: Message, user, chat) -> bool:
-        """ Обработка недавно добавленных ссылок. """
-
-        allow_links = check_recent_objects(user, chat)
+            return {"result": message_text, "markup": True}
+        # TODO не правильно работает check_recent_objects
+        allow_links = check_recent_objects(self.user, self.chat)
         if allow_links != 0:
-            self.bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-            message_text = LINK_COUNT_ERROR.format(
-                link=message.text,
-                count=chat.reply_link_count,
+            link_count_error = MessageText.objects.get(key="LINK_COUNT_ERROR").message
+            message_text = link_count_error.format(
+                link=message["text"],
+                count=self.chat.reply_link_count,
                 allow_links=allow_links
             )
-            self.bot.send_message(
-                chat_id=message.from_user.id,
-                text=message_text,
-                disable_web_page_preview=True
-            )
-            return True
-        return False
+            return {"result": message_text}
 
-    def _handle_vip_link(self, message: Message, user, link_data: dict):
-        """ Обработка ссылок для пользователей со статусом VIP. """
-
-        if user.status == UserTypes.VIP:
-            link = create_link_for_preference(user, link_data)
-            message_text = LINK_ADDED_FOR_NUMBER.format(
-                link=link,
-                number=link.queue_number
-            )
-            self.bot.send_message(
-                chat_id=message.from_user.id,
-                text=message_text,
-                disable_web_page_preview=True
-            )
-
-    def _assign_task_to_member(self, message: Message, user, chat, link):
-        """ Назначение задания для пользователя. """
-
-        task = create_task_for_member(user, chat, link)
+        link = link_db_manager.create(obj=self.user, **link_data)
+        task = create_task_for_member(self.user, self.chat, link)
         if task:
-            links = [link.vk_link for link in task.links.all()]
-            links_message = "\n".join(links)
+            task_urls = {}
+            for link in task.links.all():
+                link_url = link.vk_link
+                link_comment = link.comment if link.comment else ""
+                task_urls[link.id] = {"URL": link_url, "COMMENT": link_comment}
 
-            self.bot.send_message(
-                chat_id=message.from_user.id,
-                text=f"{USER_TASK_NUMBER + str(task.order_number)}\n{links_message}",
-                disable_web_page_preview=True,
-                reply_markup=KeyboardCreator().create_check_keyboard()
+            links_message = "\n".join(
+                [
+                    f"{i + 1}. {details['URL']}" + (
+                        f", Комментарий: {details['COMMENT']}" if details['COMMENT'] else "")
+                    for i, (link_id, details) in enumerate(task_urls.items())
+                ]
             )
 
-        else:
-            message_text = NO_TASKS_NOW.format(
-                number=link.queue_number
-            )
-            self.bot.send_message(
-                chat_id=message.from_user.id,
-                text=message_text
-            )
+            user_task_number = self.message_text_qs.get(key="USER_TASK_NUMBER").message
+            message_text = f"{user_task_number + str(task.order_number)}\n{links_message}"
+            return {"result": message_text, "markup": True}
+
+        no_tasks = self.message_text_qs.get(key="NO_TASKS_NOW").message
+        message_text = no_tasks.format(
+            number=link.queue_number
+        )
+        return {"result": message_text}

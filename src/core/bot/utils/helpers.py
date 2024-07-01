@@ -7,26 +7,17 @@ from telebot import types
 
 from vk_api import vk_api
 
-from bot.constants import message_text
-from bot.constants.message_text import (
-    VIP_CODE_SUCESS,
-    MEMBER_STATUS,
-    VK_PAGE_ALREADY_EXSIST,
-    RESULT_MESSAGE,
-    SUBSCRIBE_MISSING,
-    COMMENT_MISSING,
-    LIKE_MISSING, USER_TASK_NUMBER, TASK_ACCEPTED_MANUALLY
-)
-from bot.constants.state_type import StateTypes
-from bot.database.managers import user_db_manager, link_db_manager
-from bot.kb import KeyboardCreator
-from bot.utils import state_worker
-from bot.utils.checker import VkChecker
+from core.bot.constants.state_type import StateTypes
+from core.bot.database.managers import user_db_manager, link_db_manager
+from core.bot.kb import KeyboardCreator
+from core.bot.utils import state_worker
+from core.bot.utils.checker import VkChecker
 from core.bot.constants.users_type import UserTypes
 
 from core.bot.models import Chat, TaskStorage, LinksQueue, VIPCode, MessageText
 
 vk = vk_api.VkApi(token=settings.VK_ACCESS_TOKEN).get_api()
+checker_instance = VkChecker(vk)
 
 
 def get_chat(message: types.Message) -> Chat:
@@ -44,25 +35,41 @@ def get_chat(message: types.Message) -> Chat:
     return chat
 
 
-def check_message(message: types.Message, chat) -> dict:
+def check_message(message, chat) -> dict:
     """ Проверяет корректность отправленной ссылки в чат """
 
     result = {}
 
-    if not message.entities or message.entities[0].type != 'url':
-        result.update({'error': message_text.WRONG_URL_FORMAT})
+    message_entities = message.get("entities")
+
+    if message_entities and any(entity.get("type") != 'url' for entity in message_entities):
+        result.update(
+            {
+                'error': MessageText.objects.get(key="WRONG_URL_FORMAT").message
+            }
+        )
         return result
 
-    if 'wall' not in message.text:
-        result.update({'error': message_text.WRONG_URL_FORMAT})
+    message_text = message.get("text")
+
+    if message_text and 'wall' not in message_text:
+        result.update(
+            {
+                'error': MessageText.objects.get(key="WRONG_URL_FORMAT").message
+            }
+        )
         return result
 
-    link_count = message.text.count('vk.com')
+    link_count = message_text.count('vk.com')
     if link_count != 1:
-        result.update({'error': message_text.ONLY_ONE_LINK_TO_SEND})
+        result.update(
+            {
+                'error': MessageText.objects.get(key="ONLY_ONE_LINK_TO_SEND").message
+            }
+        )
         return result
 
-    rest_of_link = message.text.split("wall")[1]
+    rest_of_link = message_text.split("wall")[1]
     parts = rest_of_link.split("_")
     owner_id = parts[0]
     post_id = parts[1]
@@ -98,14 +105,17 @@ def check_recent_objects(user, chat) -> int:
         links_allow_qs = list(
             LinksQueue.objects.filter(
                 chat_type=chat,
-            ).order_by("-approved_at")[:allow_link_count]
+            ).order_by("-approved_at")
         )
 
-        user_in_qs = any(user.id == link.bot_user_id for link in links_allow_qs)
+        links_allow_qs_sliced = links_allow_qs[:allow_link_count]
+
+        user_in_qs = any(user.id == link.bot_user.id for link in links_allow_qs_sliced)
 
         if user_in_qs:
             total_links = 0
-            index_bot_user_ids = [(index, link.bot_user_id) for index, link in enumerate(links_allow_qs, start=0)]
+            index_bot_user_ids = [(index, link.bot_user_id) for index, link in
+                                  enumerate(links_allow_qs_sliced, start=0)]
             for index, user_id in index_bot_user_ids:
                 if user_id == user.id:
                     total_links = allow_link_count - index
@@ -114,7 +124,6 @@ def check_recent_objects(user, chat) -> int:
     return 0
 
 
-# TODO Проверяем действует ли VIP статус
 def check_current_task(user, chat):
     """ Проверяет наличие не завершенных задач """
 
@@ -143,8 +152,8 @@ def accept_send_task(user_id):
     links_qs.save()
     accepted_task.save()
     LinksQueue.objects.create(bot_user=user_id, vk_link=vk_link)
-
-    return message_text.TASK_ACCEPTED_MANUALLY
+    message = MessageText.objects.get(key="TASK_ACCEPTED_MANUALLY")
+    return message
 
 
 def get_last_task(data):
@@ -157,7 +166,7 @@ def get_last_task(data):
             task_completed=False
         )
         if not ts_qs.exists():
-            message = message_text.NO_CURRENT_TASK
+            message = MessageText.objects.get(key="NO_CURRENT_TASK")
         else:
             last_chat_type = ts_qs.last()
             message = last_chat_type.message_text
@@ -199,29 +208,51 @@ def remove_link_queue(data):
     return None
 
 
-def process_vk_link(message, user, bot):
-    vk_page_url = message.text
-    checker_instance = VkChecker(vk, bot)
+def process_vk_link(message, user):
+    vk_page_url = message.text.strip()
+
     if user.vk_user_url == vk_page_url:
-        return VK_PAGE_ALREADY_EXSIST.format(
+        return MessageText.objects.get(
+            key="VK_PAGE_ALREADY_EXSIST"
+        ).message.format(
             vk_page_url=vk_page_url
         )
 
     if 'vk.com/' in vk_page_url:
-        vk_id = checker_instance.get_user_id(vk_page_url)
+        separator = ' '
+        index_separator = vk_page_url.find(separator)
+
+        if index_separator != -1:
+            url_part = vk_page_url[:index_separator].strip()
+            other_part = vk_page_url[index_separator + len(separator):].strip()
+        else:
+            url_part = vk_page_url.strip()
+            other_part = None
+
+        if other_part is not None:
+            return MessageText.objects.get(key="VK_PAGE_ERROR")
+
+        vk_id = checker_instance.get_user_id(url_part)
         if vk_id:
             user.vk_id = vk_id
-            user.vk_user_url = vk_page_url
+            user.vk_user_url = url_part
             user.save()
-            return message_text.VK_PAGE_SUCESS
+            message_text = MessageText.objects.get(
+                key="VK_PAGE_SUCCESS"
+            ).message
+        else:
+            message_text = MessageText.objects.get(key="VK_PAGE_ERROR")
+    else:
+        message_text = MessageText.objects.get(key="WRONG_URL_FORMAT")
 
-        return message_text.VK_PAGE_ERROR
+    return message_text
 
 
 def get_status(user):
     """ Получает статус пользователя """
 
-    return MEMBER_STATUS.format(
+    message_text = MessageText.objects.get(key="MEMBER_STATUS").message
+    return message_text.format(
         url=user.vk_user_url,
         status=user.get_status_display(),
         tg_id=user.tg_id
@@ -232,26 +263,24 @@ def process_vip_code(message, user):
     """ Проверяет наличие и валидность ВИП-кода пользователя.
         Добавляет ВИП-код пользователю. """
 
-    vip_code_user_value = message.text
-    vip_code_instance_exists = VIPCode.objects.filter(vip_code=vip_code_user_value).exists()
-    if vip_code_instance_exists:
-        state_worker.set_user_state(user, state=StateTypes.DEFAULT)
-        vip_code_instance = VIPCode.objects.get(vip_code=vip_code_user_value)
-        user_vip_code = user.vip_code
+    vip_code_instance = VIPCode.objects.filter(vip_code=message.text).first()
 
-        if user_vip_code:
-            return message_text.VIP_CODE_EXSISTS
+    if vip_code_instance:
+        update_data = {
+            "state_menu": state_worker.set_user_state(user, state=StateTypes.DEFAULT),
+            "vip_code": vip_code_instance,
+            "status": UserTypes.VIP,
+            "vip_end_date": timezone.now() + timedelta(days=30),
+        }
 
-        user.vip_code = vip_code_instance
-        user.status = UserTypes.VIP
-        user.vip_end_date = timezone.now() + timedelta(days=30)
-        vip_code_end_date = user.vip_end_date.strftime("%d.%m.%Y")
+        user_db_manager.filter(id=user.id).update(**update_data)
 
-        return VIP_CODE_SUCESS.format(
-            vip_code_end_date=vip_code_end_date
+        message_text = MessageText.objects.get(key="VIP_CODE_SUCCESS").message
+        return message_text.format(
+            vip_code_end_date=update_data["vip_end_date"].strftime("%d.%m.%Y")
         )
 
-    return message_text.WRONG_VIP_CODE
+    return MessageText.objects.get(key="WRONG_VIP_CODE").message
 
 
 def create_link_for_preference(user, link_data):
@@ -270,7 +299,6 @@ def create_link_for_preference(user, link_data):
 def create_task_for_member(user, chat, link):
     """ Создает задачу для пользователя """
 
-    # TODO Тест с комментариями
     tasks_qs = list(
         LinksQueue.objects.exclude(
             bot_user_id=user.id
@@ -281,13 +309,17 @@ def create_task_for_member(user, chat, link):
     )
 
     if tasks_qs:
-        task_links = [task.vk_link for task in tasks_qs]
+        # task_links = [task.vk_link for task in tasks_qs]
         new_task = TaskStorage.objects.create(
             link=link,
             bot_user=user,
             chat_type=chat,
         )
-        for task in tasks_qs:
+
+        max_links = chat.task_link_count
+        limited_tasks_qs = tasks_qs[:max_links]
+
+        for task in limited_tasks_qs:
             task.send_count += 1
             link_db_manager.update(link_id=task.id, send_count=task.send_count)
 
@@ -299,7 +331,6 @@ def create_task_for_member(user, chat, link):
 
 
 def process_default_chat(user_id, callback, task_code):
-    a = task_code
     data = checker_instance.run_default_chat(callback.message, user_id)
     posts_without_like = []
 
@@ -352,7 +383,6 @@ def process_default_chat(user_id, callback, task_code):
 
 # TODO ALL REFACTORING!!!!
 def process_advanced_chat(user, callback, task, bot):
-    checker_instance = VkChecker(vk, bot)
     data = checker_instance.run_advanced_chat(task, user)
     missing_values = {}
     for item in data:

@@ -1,11 +1,19 @@
 import logging
+
+from django.conf import settings
 from django.utils import timezone
 from celery import shared_task
-from core.bot.models import BotUser
+from vk_api import vk_api
+
+from core.bot.handlers.chats import ChatMemberHandler
+from core.bot.models import BotUser, Chat, MessageText
 from core.bot.constants.users_type import UserTypes
-from core import celery_app
+from core.bot.utils.checker import VkChecker
 
 logger = logging.getLogger(__name__)
+
+vk = vk_api.VkApi(token=settings.VK_ACCESS_TOKEN).get_api()
+checker_instance = VkChecker(vk)
 
 
 @shared_task(name="say_hello")
@@ -15,7 +23,7 @@ def say_hello():
     logging.error('error hello')
 
 
-@celery_app.task()
+@shared_task(name="check_vip_status")
 def update_vip_status():
     logger.info("Starting update_vip_status task...")
 
@@ -29,3 +37,22 @@ def update_vip_status():
             user.save()
 
     logger.info("update_vip_status task completed.")
+
+
+@shared_task
+def handle_message_task(message):
+    try:
+        logger.info("Start task")
+        user_id = message["from"]["id"]
+        chat_id = message["chat"]["id"]
+
+        user = BotUser.objects.filter(tg_id=user_id).first()
+        chat = Chat.objects.filter(chat_id=chat_id).first()
+
+        handler = ChatMemberHandler(chat, user)
+        response = handler.handle_message(message)
+        return response
+
+    except Exception as e:
+        return f"ЧТО-ТО ПОШЛО НЕ ТАК ОБРАТИТЕСЬ К АДМИНИСТРАТОРУ, ОШИБКА: <b>{e}</b>"
+

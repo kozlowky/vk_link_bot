@@ -16,7 +16,7 @@ USER_STATES_CHOICES = [
     (StateTypes.VK_LINK.value, "VK_LINK"),
     (StateTypes.VIP_CODE.value, "VIP_CODE"),
     (StateTypes.GET_STATUS.value, "STATUS"),
-    (StateTypes.GET_STATUS.value, "RESET_LINK"),
-    (StateTypes.GET_STATUS.value, "ACCEPT_TASK_MANUALLY"),
-    (StateTypes.GET_STATUS.value, "GET_TASK_LINKS")
+    (StateTypes.RESET_LINK.value, "RESET_LINK"),
+    (StateTypes.ACCEPT_TASK_MANUALLY.value, "ACCEPT_TASK_MANUALLY"),
+    (StateTypes.GET_TASK_LINKS.value, "GET_TASK_LINKS")
 ]

@@ -10,9 +10,8 @@ from core.bot.models import Chat
 class VkChecker:
     """ Класс для проверки различных аспектов ВКонтакте. """
 
-    def __init__(self, vk, bot):
+    def __init__(self, vk):
         self.vk = vk
-        self.bot = bot
 
     @staticmethod
     def get_owner_and_post_ids(link):

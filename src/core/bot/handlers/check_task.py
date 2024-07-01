@@ -2,9 +2,9 @@ import telebot
 from django.utils import timezone
 from telebot.types import CallbackQuery
 
-from bot.constants.bot_label import BotLabel
-from bot.constants.message_text import NO_VK_PAGE_IN_PROFILE, TASK_ACCEPTED_MANUALLY
-from bot.utils.helpers import process_default_chat, process_advanced_chat
+from core.bot.constants.bot_label import BotLabel
+from core.bot.constants.message_text import NO_VK_PAGE_IN_PROFILE, TASK_ACCEPTED_MANUALLY
+from core.bot.utils.helpers import process_default_chat, process_advanced_chat
 from core.bot.database.managers import user_db_manager
 from core.bot.models import TaskStorage, LinksQueue, MessageLog
 

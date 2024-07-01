@@ -95,7 +95,7 @@ class LinksQueue(models.Model):
         'BotUser',
         related_name='links_queues',
         verbose_name=USER_VERBOSE_NAME,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         blank=True,
         null=True
     )
@@ -144,7 +144,7 @@ class TaskStorage(models.Model):
         'BotUser',
         related_name='task_storage',
         verbose_name=USER_VERBOSE_NAME,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         blank=True,
         null=True
     )
