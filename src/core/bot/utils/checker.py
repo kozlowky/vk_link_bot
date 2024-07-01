@@ -156,19 +156,32 @@ class VkChecker:
 
         return result
 
-    def run_default_chat(self, callback, user_id):
+    def run_default_chat(self, task, user):
         """ Запускает проверку для чата с типом DEFAULT """
 
-        links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
+        links = task.links.all()
         result = []
         for link in links:
-            owner_id, post_id = self.get_owner_and_post_ids(link)
-            check_likes = self.get_likes(owner_id, post_id, user_id)
+            like = self.get_likes(link.owner_id, link.post_id, user)
 
             data = {
-                'link': link,
-                'likes': check_likes,
+                link.vk_link: {
+                    'likes': like,
+                }
             }
-
             result.append(data)
+
         return result
+        # links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
+        # result = []
+        # for link in links:
+        #     owner_id, post_id = self.get_owner_and_post_ids(link)
+        #     check_likes = self.get_likes(owner_id, post_id, user_id)
+        #
+        #     data = {
+        #         'link': link,
+        #         'likes': check_likes,
+        #     }
+        #
+        #     result.append(data)
+        # return result

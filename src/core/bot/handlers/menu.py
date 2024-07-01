@@ -1,4 +1,4 @@
-from bot.constants.users_type import UserTypes
+from core.bot.constants.users_type import UserTypes
 from core.bot.models import MessageText
 from core.bot.constants.state_type import StateTypes
 from core.bot.database.managers import user_db_manager

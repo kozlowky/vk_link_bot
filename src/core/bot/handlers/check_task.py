@@ -3,10 +3,9 @@ from django.utils import timezone
 from telebot.types import CallbackQuery
 
 from core.bot.constants.bot_label import BotLabel
-from core.bot.constants.message_text import NO_VK_PAGE_IN_PROFILE, TASK_ACCEPTED_MANUALLY
 from core.bot.utils.helpers import process_default_chat, process_advanced_chat
 from core.bot.database.managers import user_db_manager
-from core.bot.models import TaskStorage, LinksQueue, MessageLog
+from core.bot.models import TaskStorage, LinksQueue, MessageLog, MessageText
 
 
 class TaskHandler:
@@ -20,6 +19,10 @@ class TaskHandler:
         self.user = user_db_manager.get(callback.from_user.id)
         self.task = None
         self.chat_type = None
+        self.messages = MessageText.objects.filter(key__in=[
+            "NO_VK_PAGE_IN_PROFILE",
+            "TASK_ACCEPTED_MANUALLY",
+        ])
 
     def handle(self) -> None:
         """ Обработка сообщения с заданием. """
@@ -77,7 +80,7 @@ class TaskHandler:
         if not self.user.vk_user_url:
             self.bot.send_message(
                 chat_id=self.callback.message.chat.id,
-                text=NO_VK_PAGE_IN_PROFILE
+                text=self.messages.get(key="NO_VK_PAGE_IN_PROFILE").message
             )
             return False
         return True
@@ -103,12 +106,20 @@ class TaskHandler:
     def _process_chat(self) -> None:
         """Обрабатывает чат в зависимости от его типа (DEFAULT или ADVANCED)."""
 
-        result = None
-
         if self.chat_type == "DEFAULT":
-            result = process_default_chat(self.user, self.callback, self.task, self.bot)
+            result = process_default_chat(
+                self.user,
+                self.callback,
+                self.task,
+                self.bot
+            )
         elif self.chat_type == "ADVANCED":
-            result = process_advanced_chat(self.user, self.callback, self.task, self.bot)
+            result = process_advanced_chat(
+                self.user,
+                self.callback,
+                self.task,
+                self.bot
+            )
         else:
             self._send_error_message()
             return
@@ -137,6 +148,6 @@ class TaskHandler:
         self.bot.edit_message_text(
             chat_id=self.callback.message.chat.id,
             message_id=self.callback.message.message_id,
-            text=f"{TASK_ACCEPTED_MANUALLY}",
+            text=self.messages.get(key="TASK_ACCEPTED_MANUALLY").message,
             disable_web_page_preview=True
         )

@@ -330,10 +330,10 @@ def create_task_for_member(user, chat, link):
         return new_task
 
 
-def process_default_chat(user_id, callback, task_code):
-    data = checker_instance.run_default_chat(callback.message, user_id)
+def process_default_chat(user, callback, task, bot):
+    messages = MessageText.objects.filter(key__in=["RESULT_MESSAGE", "USER_TASK_NUMBER"])
+    data = checker_instance.run_default_chat(task, user)
     posts_without_like = []
-
     for item in data:
         link = item.get('link')
         likes = item.get('likes')
@@ -341,48 +341,130 @@ def process_default_chat(user_id, callback, task_code):
         if not likes:
             posts_without_like.append(link)
 
-        tasks_qs = list(LinksQueue.objects.all().values())
-
-        for task in tasks_qs:
-            if task['vk_link'] == link and link not in posts_without_like:
-                task_instance = LinksQueue.objects.get(id=task['id'])
-                UserDoneLinks.objects.get_or_create(bot_user=user_id, link=task_instance)
-
     if posts_without_like:
-        message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n"
-        message += "\n".join(posts_without_like)
 
-        try:
-            TaskStorage.objects.filter(code=task_code).update(message_text=message)
-            bot.edit_message_text(
-                chat_id=callback.message.chat.id,
-                message_id=callback.message.message_id,
-                text=message,
-                disable_web_page_preview=True,
-                reply_markup=check_kb
-            )
-        except ApiTelegramException:
-            message_ext = f"Вы не завершили предыдущее {message}"
-            bot.edit_message_text(
-                chat_id=callback.message.chat.id,
-                message_id=callback.message.message_id,
-                text=message_ext,
-                disable_web_page_preview=True,
-                reply_markup=check_kb
-            )
-            TaskStorage.objects.filter(code=task_code).update(message_text=message_ext)
-    else:
-        message = accept_send_task(user_id)
+        message_texts = MessageText.objects.filter(key="LIKE_MISSING").values('key', 'message')
+        message_dict = {msg['key']: msg['message'] for msg in message_texts}
+
+        for link in posts_without_like:
+            value = '\n\n'.join(error_messages)
+            results[link] = messages.get(key="RESULT_MESSAGE").message.format(value=value)
+        user_number = messages.get(key="USER_TASK_NUMBER").message
+        result_string = f"{user_number} {task.order_number}\n"
+        for link, message in results.items():
+            result_string += f"<a href='{link}'>Ссылка</a>:\n{message}\n"
+
+        check_kb = KeyboardCreator().create_check_keyboard()
         bot.edit_message_text(
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,
-            text=message,
-            disable_web_page_preview=True
+            text=result_string,
+            disable_web_page_preview=True,
+            reply_markup=check_kb,
+            parse_mode='HTML'
         )
 
 
-# TODO ALL REFACTORING!!!!
+        pass
+
+    missing_values = {}
+    for item in data:
+
+        for link, values in item.items():
+            result = {key: False for key, value in values.items() if not value}
+            if result:
+                missing_values[link] = result
+
+    results = {}
+
+    if missing_values:
+        message_keys = []
+        if any(values.get('likes') is False for values in missing_values.values()):
+            message_keys.append("LIKE_MISSING")
+
+
+        message_texts = MessageText.objects.filter(key__in=message_keys).values('key', 'message')
+        message_dict = {msg['key']: msg['message'] for msg in message_texts}
+
+        for link, values in missing_values.items():
+            error_messages = []
+
+            if values.get('likes') is False:
+                error_messages.append(message_dict.get("LIKE_MISSING", ""))
+
+            value = '\n\n'.join(error_messages)
+            results[link] = messages.get(key="RESULT_MESSAGE").message.format(value=value)
+        user_number = messages.get(key="USER_TASK_NUMBER").message
+        result_string = f"{user_number} {task.order_number}\n"
+        for link, message in results.items():
+            result_string += f"<a href='{link}'>Ссылка</a>:\n{message}\n"
+
+        check_kb = KeyboardCreator().create_check_keyboard()
+        bot.edit_message_text(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            text=result_string,
+            disable_web_page_preview=True,
+            reply_markup=check_kb,
+            parse_mode='HTML'
+        )
+
+    else:
+        return task
+
+    #
+    #
+    # data = checker_instance.run_default_chat(callback.message, user_id)
+    # posts_without_like = []
+    #
+    # for item in data:
+    #     link = item.get('link')
+    #     likes = item.get('likes')
+    #
+    #     if not likes:
+    #         posts_without_like.append(link)
+    #
+    #     tasks_qs = list(LinksQueue.objects.all().values())
+    #
+    #     for task in tasks_qs:
+    #         if task['vk_link'] == link and link not in posts_without_like:
+    #             task_instance = LinksQueue.objects.get(id=task['id'])
+    #
+    # if posts_without_like:
+    #     message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n"
+    #     message += "\n".join(posts_without_like)
+    #
+    #     try:
+    #         TaskStorage.objects.filter(code=task_code).update(message_text=message)
+    #         bot.edit_message_text(
+    #             chat_id=callback.message.chat.id,
+    #             message_id=callback.message.message_id,
+    #             text=message,
+    #             disable_web_page_preview=True,
+    #             reply_markup=check_kb
+    #         )
+    #     except ApiTelegramException:
+    #         message_ext = f"Вы не завершили предыдущее {message}"
+    #         bot.edit_message_text(
+    #             chat_id=callback.message.chat.id,
+    #             message_id=callback.message.message_id,
+    #             text=message_ext,
+    #             disable_web_page_preview=True,
+    #             reply_markup=check_kb
+    #         )
+    #         TaskStorage.objects.filter(code=task_code).update(message_text=message_ext)
+    # else:
+    #     message = accept_send_task(user_id)
+    #     bot.edit_message_text(
+    #         chat_id=callback.message.chat.id,
+    #         message_id=callback.message.message_id,
+    #         text=message,
+    #         disable_web_page_preview=True
+    #     )
+
+
 def process_advanced_chat(user, callback, task, bot):
+    messages = MessageText.objects.filter(key__in=["RESULT_MESSAGE", "USER_TASK_NUMBER"])
     data = checker_instance.run_advanced_chat(task, user)
     missing_values = {}
     for item in data:
@@ -415,11 +497,11 @@ def process_advanced_chat(user, callback, task, bot):
                 error_messages.append(message_dict.get("SUBSCRIBE_MISSING", ""))
 
             value = '\n\n'.join(error_messages)
-            results[link] = RESULT_MESSAGE.format(value=value)
-
-        result_string = f"{USER_TASK_NUMBER} {task.order_number}\n"
+            results[link] = messages.get(key="RESULT_MESSAGE").message.format(value=value)
+        user_number = messages.get(key="USER_TASK_NUMBER").message
+        result_string = f"{user_number} {task.order_number}\n"
         for link, message in results.items():
-            result_string += f"{link}:{message}\n"
+            result_string += f"<a href='{link}'>Ссылка</a>:\n{message}\n"
 
         check_kb = KeyboardCreator().create_check_keyboard()
         bot.edit_message_text(
@@ -427,7 +509,8 @@ def process_advanced_chat(user, callback, task, bot):
             message_id=callback.message.message_id,
             text=result_string,
             disable_web_page_preview=True,
-            reply_markup=check_kb
+            reply_markup=check_kb,
+            parse_mode='HTML'
         )
 
     else:

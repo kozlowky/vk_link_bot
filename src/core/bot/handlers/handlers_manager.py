@@ -1,17 +1,19 @@
 import telebot
 from telebot import types
 
-from bot.handlers.check_task import TaskHandler
+from core.bot.handlers.check_task import TaskHandler
 
-from bot.constants import message_text
-from bot.database.managers import user_db_manager
-from bot.utils.helpers import (
+from core.bot.constants import message_text
+from core.bot.database.managers import user_db_manager
+from core.bot.handlers.decorator import ErrorHandler
+from core.bot.utils.helpers import (
     get_last_task,
     process_accept_manually,
     remove_link_queue
 )
 
 
+@ErrorHandler.create()
 def check(callback: types.CallbackQuery, bot: telebot.TeleBot) -> None:
     """ Функция для обработки callback-запросов бота. """
 
@@ -19,6 +21,7 @@ def check(callback: types.CallbackQuery, bot: telebot.TeleBot) -> None:
     handler.handle()
 
 
+@ErrorHandler.create()
 def admin_commands(message: types.Message, bot):
     """ Функция для обработки комманд Администратора """
 
