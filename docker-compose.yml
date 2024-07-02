@@ -1,7 +1,7 @@
 version: "3.7"
 
 services:
-  app: &app_default
+  app:
     build:
       context: .
       dockerfile: ./deploy/app.Dockerfile
@@ -14,15 +14,19 @@ services:
       - "8000"
     depends_on:
       - db
-      - redis
 
   celery:
-    <<: *app_default
+    build:
+      context: .
+      dockerfile: ./deploy/app.Dockerfile
     command: celery --app core.celery_app.app worker -E --loglevel=info
-
-#    celery_beat:
-#      <<: *app_default
-#      command: celery --app server.celery_app.app beat --loglevel=info
+    volumes:
+      - ./static_volume:/project/static/
+    env_file:
+      - ./src/.env
+    depends_on:
+      - db
+      - redis
 
   nginx:
     build:
@@ -63,13 +67,8 @@ services:
 
   redis:
     image: redis:5-alpine
-    restart : always
+    restart: unless-stopped
     volumes:
       - ./redis_data:/data
     expose:
       - "6379"
-
-volumes:
-  static_volume:
-#  postgres_data:
-

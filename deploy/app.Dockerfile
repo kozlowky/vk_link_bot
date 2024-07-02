@@ -9,7 +9,7 @@ COPY $DEPLOY_DIR/gunicorn.conf.py $PROJECT_ROOT
 COPY $DEPLOY_DIR/run_app.sh $PROJECT_ROOT
 
 RUN apt-get update && \
-    apt-get install -y build-essential libpq-dev python3-dev nodejs npm && \
+    apt-get install -y build-essential libpq-dev python3-dev && \
     apt-get clean
 
 COPY ./$SRC_DIR/requirements.txt $PROJECT_ROOT
