@@ -33,7 +33,7 @@ def process_answers(message, bot):
                 text=result.message,
                 disable_web_page_preview=True
             )
-
+        state_worker.set_user_state(user, state=StateTypes.DEFAULT)
         bot.reply_to(
             message=message,
             text=result,

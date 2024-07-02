@@ -86,7 +86,7 @@ class ChatMemberHandler:
             user_task_number = self.message_text_qs.get(key="USER_TASK_NUMBER").message
             message_text = f"{user_task_number + str(task.order_number)}\n{links_message}"
             return {"result": message_text, "markup": True}
-
+        # todo добавить ссылка подтверждена
         no_tasks = self.message_text_qs.get(key="NO_TASKS_NOW").message
         message_text = no_tasks.format(
             number=link.queue_number

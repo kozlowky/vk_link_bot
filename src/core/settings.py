@@ -240,4 +240,9 @@ REDIS_HOST = env.str('REDIS_HOST', default='127.0.0.1')
 REDIS_PORT = env.int('REDIS_PORT', default=6379, cast=int)
 
 CELERY_BROKER_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/3'
+CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:{REDIS_PORT}/3'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
