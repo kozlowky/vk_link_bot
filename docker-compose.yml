@@ -7,7 +7,7 @@ services:
       dockerfile: ./deploy/app.Dockerfile
     restart: always
     volumes:
-      - static_volume:/project/static/
+      - ./static_volume:/project/static/
     env_file:
       - ./src/.env
     expose:
