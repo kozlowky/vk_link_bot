@@ -22,8 +22,8 @@ def start(message: types.Message, bot):
     else:
         user_data = {
             "first_name": message.from_user.first_name,
-            "last_name": message.from_user.last_name,
-            "username": message.from_user.username,
+            "last_name": message.from_user.last_name or "-",
+            "username": message.from_user.username or "-",
         }
         user_db_manager.create(user_id, **user_data)
 
