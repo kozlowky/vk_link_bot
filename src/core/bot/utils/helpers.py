@@ -2,19 +2,17 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.utils import timezone
-
 from telebot import types
-
 from vk_api import vk_api
 
 from core.bot.constants.state_type import StateTypes
-from core.bot.database.managers import user_db_manager, link_db_manager
+from core.bot.constants.users_type import UserTypes, status_display
+from core.bot.database.managers import link_db_manager, user_db_manager
+from core.bot.handlers.advanced_chat_processors import ChatProcessor
 from core.bot.kb import KeyboardCreator
+from core.bot.models import Chat, LinksQueue, MessageText, TaskStorage, VIPCode
 from core.bot.utils import state_worker
 from core.bot.utils.checker import VkChecker
-from core.bot.constants.users_type import UserTypes
-
-from core.bot.models import Chat, TaskStorage, LinksQueue, VIPCode, MessageText
 
 vk = vk_api.VkApi(token=settings.VK_ACCESS_TOKEN).get_api()
 checker_instance = VkChecker(vk)
@@ -168,8 +166,11 @@ def get_last_task(data):
         if not ts_qs.exists():
             message = MessageText.objects.get(key="NO_CURRENT_TASK")
         else:
-            last_chat_type = ts_qs.last()
-            message = last_chat_type.message_text
+            task = ts_qs.last()
+            links_in_task = task.links.values_list("vk_link", flat=True)
+            links_message = "\n".join([f"{index + 1}. {link}" for index, link in enumerate(links_in_task)])
+            message_text = MessageText.objects.get(key="USER_TASK_NUMBER").message
+            message = f"{message_text}{task.order_number}\n{links_message}", 'check'
     else:
         message = f"Пользователь: {data} не существует!"
 
@@ -190,7 +191,10 @@ def process_accept_manually(data):
 
         else:
             last_task = ts_qs.last()
-            message = f"Пользователь {data}\n\n{last_task.message_text}"
+            links_in_task = last_task.links.values_list("vk_link", flat=True)
+            links_message = "\n".join([f"{index + 1}. {link}" for index, link in enumerate(links_in_task)])
+            message_text = MessageText.objects.get(key="USER_TASK_NUMBER").message
+            message = f"{message_text}{last_task.order_number}\n{links_message}", 'accept'
     else:
         message = f"Пользователь: {data} не существует!"
 
@@ -206,6 +210,14 @@ def remove_link_queue(data):
         return True
 
     return None
+
+
+def get_help():
+    return ''' 
+    /get_task - выводит активное задание пользователя 
+/accept_task - принимает задание пользователя
+/remove_link - удаляет ссылку пользователя
+    '''
 
 
 def process_vk_link(message, user):
@@ -254,7 +266,7 @@ def get_status(user):
     message_text = MessageText.objects.get(key="MEMBER_STATUS").message
     return message_text.format(
         url=user.vk_user_url,
-        status=user.get_status_display(),
+        status=status_display(user),
         tg_id=user.tg_id
     )
 
@@ -295,41 +307,42 @@ def create_link_for_preference(user, link_data):
     return link
 
 
-# TODO Переделать.
 def create_task_for_member(user, chat, link):
     """ Создает задачу для пользователя """
 
-    tasks_qs = list(
-        LinksQueue.objects.exclude(
-            bot_user_id=user.id
-        ).filter(
-            chat_type=chat,
-            is_approved=True,
-        ).distinct()
-    )
-
-    if tasks_qs:
-        # task_links = [task.vk_link for task in tasks_qs]
-        new_task = TaskStorage.objects.create(
-            link=link,
-            bot_user=user,
-            chat_type=chat,
+    if user.status != UserTypes.VIP:
+        tasks_qs = list(
+            LinksQueue.objects.exclude(
+                bot_user_id=user.id
+            ).filter(
+                chat_type=chat,
+                is_approved=True,
+            ).distinct()
         )
 
-        max_links = chat.task_link_count
-        limited_tasks_qs = tasks_qs[:max_links]
+        if tasks_qs:
+            new_task = TaskStorage.objects.create(
+                link=link,
+                bot_user=user,
+                chat_type=chat,
+            )
 
-        for task in limited_tasks_qs:
-            task.send_count += 1
-            link_db_manager.update(link_id=task.id, send_count=task.send_count)
+            max_links = chat.task_link_count
+            limited_tasks_qs = tasks_qs[:max_links]
 
-            new_task.links.add(task)
+            for task in limited_tasks_qs:
+                task.send_count += 1
+                link_db_manager.update(link_id=task.id, send_count=task.send_count)
 
-        new_task.save()
+                new_task.links.add(task)
 
-        return new_task
+            new_task.save()
 
+            return new_task
 
+    return 'vip' # todo вернуть объект
+
+# todo удалить
 def process_default_chat(user, callback, task, bot):
     messages = MessageText.objects.filter(key__in=["RESULT_MESSAGE", "USER_TASK_NUMBER"])
     data = checker_instance.run_default_chat(task, user)
@@ -364,7 +377,6 @@ def process_default_chat(user, callback, task, bot):
             parse_mode='HTML'
         )
 
-
         pass
 
     missing_values = {}
@@ -382,7 +394,6 @@ def process_default_chat(user, callback, task, bot):
         if any(values.get('likes') is False for values in missing_values.values()):
             message_keys.append("LIKE_MISSING")
 
-
         message_texts = MessageText.objects.filter(key__in=message_keys).values('key', 'message')
         message_dict = {msg['key']: msg['message'] for msg in message_texts}
 
@@ -411,107 +422,8 @@ def process_default_chat(user, callback, task, bot):
 
     else:
         return task
-
-    #
-    #
-    # data = checker_instance.run_default_chat(callback.message, user_id)
-    # posts_without_like = []
-    #
-    # for item in data:
-    #     link = item.get('link')
-    #     likes = item.get('likes')
-    #
-    #     if not likes:
-    #         posts_without_like.append(link)
-    #
-    #     tasks_qs = list(LinksQueue.objects.all().values())
-    #
-    #     for task in tasks_qs:
-    #         if task['vk_link'] == link and link not in posts_without_like:
-    #             task_instance = LinksQueue.objects.get(id=task['id'])
-    #
-    # if posts_without_like:
-    #     message = f"Задание № {task_code}\n\nВы не поставили лайк в следующих постах:\n\n"
-    #     message += "\n".join(posts_without_like)
-    #
-    #     try:
-    #         TaskStorage.objects.filter(code=task_code).update(message_text=message)
-    #         bot.edit_message_text(
-    #             chat_id=callback.message.chat.id,
-    #             message_id=callback.message.message_id,
-    #             text=message,
-    #             disable_web_page_preview=True,
-    #             reply_markup=check_kb
-    #         )
-    #     except ApiTelegramException:
-    #         message_ext = f"Вы не завершили предыдущее {message}"
-    #         bot.edit_message_text(
-    #             chat_id=callback.message.chat.id,
-    #             message_id=callback.message.message_id,
-    #             text=message_ext,
-    #             disable_web_page_preview=True,
-    #             reply_markup=check_kb
-    #         )
-    #         TaskStorage.objects.filter(code=task_code).update(message_text=message_ext)
-    # else:
-    #     message = accept_send_task(user_id)
-    #     bot.edit_message_text(
-    #         chat_id=callback.message.chat.id,
-    #         message_id=callback.message.message_id,
-    #         text=message,
-    #         disable_web_page_preview=True
-    #     )
 
 
 def process_advanced_chat(user, callback, task, bot):
-    messages = MessageText.objects.filter(key__in=["RESULT_MESSAGE", "USER_TASK_NUMBER"])
-    data = checker_instance.run_advanced_chat(task, user)
-    missing_values = {}
-    for item in data:
-        for link, values in item.items():
-            result = {key: False for key, value in values.items() if not value}
-            if result:
-                missing_values[link] = result
-
-    results = {}
-
-    if missing_values:
-        message_keys = []
-        if any(values.get('comment') is False for values in missing_values.values()):
-            message_keys.append("COMMENT_MISSING")
-        if any(values.get('likes') is False for values in missing_values.values()):
-            message_keys.append("LIKE_MISSING")
-        if any(values.get('sub') is False for values in missing_values.values()):
-            message_keys.append("SUBSCRIBE_MISSING")
-
-        message_texts = MessageText.objects.filter(key__in=message_keys).values('key', 'message')
-        message_dict = {msg['key']: msg['message'] for msg in message_texts}
-
-        for link, values in missing_values.items():
-            error_messages = []
-            if values.get('comment') is False:
-                error_messages.append(message_dict.get("COMMENT_MISSING", ""))
-            if values.get('likes') is False:
-                error_messages.append(message_dict.get("LIKE_MISSING", ""))
-            if values.get('sub') is False:
-                error_messages.append(message_dict.get("SUBSCRIBE_MISSING", ""))
-
-            value = '\n\n'.join(error_messages)
-            results[link] = messages.get(key="RESULT_MESSAGE").message.format(value=value)
-        user_number = messages.get(key="USER_TASK_NUMBER").message
-        result_string = f"{user_number} {task.order_number}\n"
-        for link, message in results.items():
-            result_string += f"<a href='{link}'>Ссылка</a>:\n{message}\n"
-
-        check_kb = KeyboardCreator().create_check_keyboard()
-        bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text=result_string,
-            disable_web_page_preview=True,
-            reply_markup=check_kb,
-            parse_mode='HTML'
-        )
-
-    else:
-        return task
+    processor = ChatProcessor(user, callback, task, bot)
+    return processor.process()

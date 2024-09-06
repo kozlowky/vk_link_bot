@@ -41,7 +41,8 @@ class KeyboardCreator:
         keyboard.add(button)
         return keyboard
 
-    def create_accept_manualy(self):
+    @staticmethod
+    def create_accept_manualy():
         keyboard = InlineKeyboardMarkup()
         button = InlineKeyboardButton(
             text='Принять задание вручную',

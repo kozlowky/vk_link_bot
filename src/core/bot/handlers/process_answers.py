@@ -21,6 +21,7 @@ check_button = keyboard_creator.create_check_keyboard()
 
 @ErrorHandler.create()
 # todo ошибки state организовать сброс
+# todo рефакторинг
 def process_answers(message, bot):
     user = user_db_manager.get(user_id=message.from_user.id)
     state_type = user.state_menu

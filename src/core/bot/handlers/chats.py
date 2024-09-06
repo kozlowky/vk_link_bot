@@ -1,4 +1,4 @@
-from core.bot.models import MessageText
+from core.bot.models import MessageText, TaskStorage
 from core.bot.constants.message_text import (
     LINK_ADDED_FOR_NUMBER,
     TASK_IS_NOT_COMPLETE,
@@ -38,7 +38,7 @@ class ChatMemberHandler:
         if link_data.get('error'):
             return {"result": link_data["error"]}
 
-        if self.user.is_admin or self.user.status == UserTypes.VIP:
+        if self.user.is_admin:
             link = create_link_for_preference(self.user, link_data)
             link_add_number = self.message_text_qs.get(key="LINK_ADDED_FOR_NUMBER").message
             message_text = link_add_number.format(
@@ -55,7 +55,7 @@ class ChatMemberHandler:
                 links=links
             )
             return {"result": message_text, "markup": True}
-        # TODO не правильно работает check_recent_objects
+
         allow_links = check_recent_objects(self.user, self.chat)
         if allow_links != 0:
             link_count_error = MessageText.objects.get(key="LINK_COUNT_ERROR").message
@@ -68,7 +68,7 @@ class ChatMemberHandler:
 
         link = link_db_manager.create(obj=self.user, **link_data)
         task = create_task_for_member(self.user, self.chat, link)
-        if task:
+        if isinstance(task, TaskStorage):
             task_urls = {}
             for link in task.links.all():
                 link_url = link.vk_link
@@ -86,7 +86,19 @@ class ChatMemberHandler:
             user_task_number = self.message_text_qs.get(key="USER_TASK_NUMBER").message
             message_text = f"{user_task_number + str(task.order_number)}\n{links_message}"
             return {"result": message_text, "markup": True}
-        # todo добавить ссылка подтверждена
+
+        elif task == 'vip':
+            link.is_approved = True
+            link.save()
+            link_add_number = self.message_text_qs.get(key="LINK_ADDED_FOR_NUMBER").message
+            message_text = link_add_number.format(
+                link=link,
+                number=link.queue_number
+            )
+            return {"result": message_text}
+
+        link.is_approved = True
+        link.save()
         no_tasks = self.message_text_qs.get(key="NO_TASKS_NOW").message
         message_text = no_tasks.format(
             number=link.queue_number

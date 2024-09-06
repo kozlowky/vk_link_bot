@@ -50,6 +50,7 @@ class TaskHandler:
                 text=f"Задача с номером {task_number} не найдена"
             )
             return
+
         self.chat_type = BotLabel(self.task.chat_type.chat_label).name
         MessageLog.objects.create(
             chat=self.task.chat_type,
@@ -92,13 +93,13 @@ class TaskHandler:
         index = text.find('№')
 
         if index == -1:
-            return None
+            return 0
 
         task_number_part = text[index + 1:].strip()
         task_number_parts = task_number_part.split()
 
         if not task_number_parts:
-            return None
+            return 0
 
         task_number = int(task_number_parts[0])
         return task_number
@@ -106,23 +107,30 @@ class TaskHandler:
     def _process_chat(self) -> None:
         """Обрабатывает чат в зависимости от его типа (DEFAULT или ADVANCED)."""
 
-        if self.chat_type == "DEFAULT":
-            result = process_default_chat(
+        result = process_advanced_chat(
                 self.user,
                 self.callback,
                 self.task,
                 self.bot
             )
-        elif self.chat_type == "ADVANCED":
-            result = process_advanced_chat(
-                self.user,
-                self.callback,
-                self.task,
-                self.bot
-            )
-        else:
-            self._send_error_message()
-            return
+
+        # if self.chat_type == "DEFAULT":
+        #     result = process_default_chat(
+        #         self.user,
+        #         self.callback,
+        #         self.task,
+        #         self.bot
+        #     )
+        # elif self.chat_type == "ADVANCED":
+        #     result = process_advanced_chat(
+        #         self.user,
+        #         self.callback,
+        #         self.task,
+        #         self.bot
+        #     )
+        # else:
+        #     self._send_error_message()
+        #     return
 
         if result:
             self._handle_success(result)

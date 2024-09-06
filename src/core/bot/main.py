@@ -9,6 +9,7 @@ from core.bot.handlers.start import start
 from core.bot.handlers.handlers_manager import (
     admin_commands,
     check,
+    accept,
 )
 from core.bot.handlers.menu import menu
 from core.bot.handlers.process_answers import process_answers
@@ -30,7 +31,11 @@ MESSAGE_HANDLERS_MAP = {
         'commands': ['start'],
     },
     admin_commands: {
-        'commands': ['get_task', 'accept_task'],
+        'commands': [
+            'get_task',
+            'accept_task',
+            '/remove_link',
+            'help'],
     },
     menu: {
         'func': lambda message: message.text in [
@@ -48,6 +53,9 @@ CALLBACK_HANDLERS_MAP = {
     check: {
         'func': lambda callback: callback.data == 'check_button',
     },
+    accept: {
+        'func': lambda callback: callback.data == 'accept_manually',
+    }
 }
 
 

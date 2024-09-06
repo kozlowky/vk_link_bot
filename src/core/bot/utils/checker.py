@@ -172,16 +172,3 @@ class VkChecker:
             result.append(data)
 
         return result
-        # links = re.findall(r'(https:\/\/vk\.com\/\S+)', callback.text)
-        # result = []
-        # for link in links:
-        #     owner_id, post_id = self.get_owner_and_post_ids(link)
-        #     check_likes = self.get_likes(owner_id, post_id, user_id)
-        #
-        #     data = {
-        #         'link': link,
-        #         'likes': check_likes,
-        #     }
-        #
-        #     result.append(data)
-        # return result
